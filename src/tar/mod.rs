@@ -25,7 +25,7 @@ pub fn _create_tar_ball(
     Ok(())
 }
 
-pub fn _decompress_tarball(path: &str, destination: &str) -> Result<(), std::io::Error> {
+pub fn decompress_tarball(path: &str, destination: &str) -> Result<(), std::io::Error> {
     let tar_gz = File::open(path)?;
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);

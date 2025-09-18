@@ -20,7 +20,7 @@ pub enum Commands {
     },
 }
 
-pub fn _bento_cli() {
+pub fn bento_cli() {
     let cli = Cli::parse();
 
     match &cli.command {
