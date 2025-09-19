@@ -6,9 +6,11 @@ use nix::{
     unistd::{ForkResult, chroot, fork, getpid, write},
 };
 
+use nix::unistd::execve;
+use std::ffi::CString;
 use std::process;
 
-fn make_child_pid() {
+pub fn make_child_pid() {
     println!("=== Starting Container Creation ===");
     println!("About to create PID namespace...");
     println!("My pid BEFORE unshare is {}", getpid());
@@ -59,6 +61,7 @@ fn make_child_pid() {
             println!("👶 CHILD: About to chroot into container...");
             //** In the child: chroot into the prepared directory **//
             chroot(container_dir).expect("chroot failed");
+            std::env::set_current_dir("/").expect("failed to cd to root");
             println!("👶 CHILD: ✅ chroot successful!");
 
             println!("👶 CHILD: Testing chroot by reading /bin directory...");
@@ -75,9 +78,16 @@ fn make_child_pid() {
                     println!("👶 CHILD: ❌ chroot might have failed: {}", e);
                 }
             }
-
+            let path = CString::new("/bin/bash").unwrap();
+            let arg1 = CString::new("").unwrap();
+            // let arg2 = CString::new("-l").unwrap();
+            // let arg3 = CString::new("/").unwrap();
+            let args = vec![arg1];
+            let env_var = CString::new("MY_VAR=hello").unwrap();
+            let env = vec![env_var];
+            execve(&path, &args, &env).unwrap();
+            eprintln!("execve failed!");
             println!("👶 CHILD: Container setup complete! Exiting...");
-            // execv(&CString::new("/bin/bash").unwrap(), &[] as &[&CString]).expect("exec failed");
             process::exit(0);
         }
         Err(e) => {
