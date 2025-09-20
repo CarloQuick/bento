@@ -1,12 +1,13 @@
 use nix::mount::{mount, umount};
 use nix::sched::{CloneFlags, unshare};
-use nix::unistd::execve;
+
+use names::{Generator, Name};
+use nix::unistd::{execve, sethostname};
 use nix::{
     mount::MsFlags,
     sys::wait::waitpid,
     unistd::{ForkResult, chroot, fork},
 };
-
 use std::ffi::CString;
 use std::process;
 
@@ -30,6 +31,8 @@ pub fn create_namespace() {
 
     //** Create PID namespace **//
     unshare(CloneFlags::CLONE_NEWPID).expect("Failed to create a PID namespace");
+    unshare(CloneFlags::CLONE_NEWUTS).expect("Failed to create uts namespace");
+    //** UTS namespace **//
 
     //** Fork into the namespace **//
     match unsafe { fork() } {
@@ -41,8 +44,10 @@ pub fn create_namespace() {
             chroot(container_dir).expect("chroot failed");
             std::env::set_current_dir("/").expect("failed to cd to root");
 
+            let mut generator = Generator::with_naming(Name::Numbered);
+            sethostname(generator.next().unwrap()).expect("Failed to set hostname");
             let path = CString::new("/bin/bash").unwrap();
-            let arg1 = CString::new("").unwrap();
+            let arg1 = CString::new("bash").unwrap();
             let args = vec![arg1];
             let env_var = CString::new("MY_VAR=hello").unwrap();
             let env = vec![env_var];
