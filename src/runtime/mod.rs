@@ -16,18 +16,31 @@ pub fn create_namespace() {
     unshare(CloneFlags::CLONE_NEWNS).expect("Failed to create a mounted namespace");
 
     //** Create your container root directory **//
-    let container_dir = "/home/cquick/Desktop/dev/temp/container-practice";
-    // fs::create_dir(container_dir).expect("Failed to create path");
+    let upper_dir = "/home/cquick/Desktop/dev/temp/container-practice/upper";
+    // fs::create_dir(upper_dir).expect("Failed to create path");
+    let workdir = "/home/cquick/Desktop/dev/temp/container-practice/workdir";
+    let merge = "/home/cquick/Desktop/dev/temp/container-practice/merged";
+    // fs::create_dir(workdir).expect("Failed to create path");
 
     //** Mount/copy your container filesystem into that directory **//
-    let source_dir = "/home/cquick/Desktop/dev/temp/temp_untar";
-    let source = Some(source_dir);
-    let target = container_dir;
-    let fstype = None::<&str>;
-    let flags = MsFlags::MS_BIND;
-    let data = None::<&str>;
+    let lower_dir = "/home/cquick/Desktop/dev/temp/temp_untar";
 
-    mount(source, target, fstype, flags, data).expect("Failed to Mount Filesystem");
+    // Values for the filesystemtype argument supported by the kernel are
+    // listed in /proc/filesystems
+    let fstype = Some("overlay");
+    // mount flags
+    let flags = MsFlags::empty();
+    //
+    let overlay_options = format!(
+        "lowerdir={},upperdir={},workdir={}",
+        { lower_dir },
+        { upper_dir },
+        { workdir },
+    );
+    let overlay_options = &overlay_options[..];
+    let data = Some(overlay_options);
+
+    mount(Some("overlay"), merge, fstype, flags, data).expect("Failed to Mount Filesystem");
 
     //** Create PID namespace **//
     unshare(CloneFlags::CLONE_NEWPID).expect("Failed to create a PID namespace");
@@ -41,7 +54,7 @@ pub fn create_namespace() {
         }
         Ok(ForkResult::Child) => {
             //** In the child: chroot into the prepared directory **//
-            chroot(container_dir).expect("chroot failed");
+            chroot(merge).expect("chroot failed");
             std::env::set_current_dir("/").expect("failed to cd to root");
 
             let mut generator = Generator::with_naming(Name::Numbered);
@@ -59,5 +72,5 @@ pub fn create_namespace() {
         }
     }
     //** Unmount the container filesystem **//
-    umount(target).expect("Failed to Unmount");
+    umount(merge).expect("Failed to Unmount");
 }
