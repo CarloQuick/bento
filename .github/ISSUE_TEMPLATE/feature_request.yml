@@ -1,0 +1,66 @@
+name: Feature Request
+description: Suggest an idea for this project
+title: "[FEATURE] "
+labels: ["enhancement"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature!
+
+  - type: textarea
+    id: feature-summary
+    attributes:
+      label: Feature Summary
+      description: A brief, clear description of the feature you'd like to see added.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem-use-case
+    attributes:
+      label: Problem/Use Case
+      description: Describe the problem this feature would solve or the use case it would enable.
+      placeholder: "I'm always frustrated when..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like to see implemented.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: What needs to be true for this feature to be considered complete?
+      options:
+        - label: Feature is implemented and working
+        - label: Tests are written and passing
+        - label: Documentation is updated
+        - label: Performance impact is acceptable
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this feature to you?
+      options:
+        - Critical
+        - High
+        - Medium
+        - Low
+        - Nice to have
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation-details
+    attributes:
+      label: Implementation Details
+      description: If you have technical implementation ideas, describe them here.

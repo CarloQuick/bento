@@ -1,0 +1,70 @@
+name: Documentation
+description: Improve or add documentation
+title: "[DOCS] "
+labels: ["documentation"]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us improve our documentation!
+
+  - type: textarea
+    id: documentation-needed
+    attributes:
+      label: Documentation Needed
+      description: What documentation needs to be created or improved?
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-state
+    attributes:
+      label: Current State
+      description: Describe the current documentation (if any) and what's missing/unclear.
+
+  - type: checkboxes
+    id: target-audience
+    attributes:
+      label: Target Audience
+      description: Who is this documentation for?
+      options:
+        - label: End users
+        - label: Contributors/developers
+        - label: System administrators
+        - label: API consumers
+
+  - type: checkboxes
+    id: content-requirements
+    attributes:
+      label: Content Requirements
+      description: What type of content is needed?
+      options:
+        - label: Installation/setup instructions
+        - label: Usage examples
+        - label: API documentation
+        - label: Architecture overview
+        - label: Troubleshooting guide
+        - label: Contributing guidelines
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: How important is this documentation?
+      options:
+        - Critical (blocks users)
+        - High
+        - Medium
+        - Low
+
+  - type: checkboxes
+    id: success-criteria
+    attributes:
+      label: Success Criteria
+      description: What makes this documentation successful?
+      options:
+        - label: Documentation is clear and comprehensive
+        - label: Examples are tested and working
+        - label: Screenshots/diagrams included where helpful
+        - label: Documentation follows project style guide
