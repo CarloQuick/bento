@@ -9,3 +9,4 @@ clap = { version = "4.5.47", features = ["derive"] }
 names = { version = "0.14.0", default-features = false }
 flate2 = "1.1.2"
 tar = "0.4.44"
+dotenv = "0.15"

@@ -63,6 +63,7 @@ name = "bento"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "dotenv",
  "flate2",
  "names",
  "nix",
@@ -141,6 +142,12 @@ checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
 dependencies = [
  "cfg-if",
 ]
+
+[[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "errno"
