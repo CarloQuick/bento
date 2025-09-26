@@ -1,7 +1,7 @@
 use nix::mount::{mount, umount};
 use nix::sched::{CloneFlags, unshare};
 
-use names::{Generator, Name};
+// use names::{Generator, Name};
 use nix::unistd::{execve, sethostname};
 use nix::{
     mount::MsFlags,
@@ -12,15 +12,12 @@ use std::ffi::CString;
 use std::path::Path;
 use std::process;
 use std::{env, fs};
-pub fn create_namespace() {
-    let mut generator: Generator<'_> = Generator::with_naming(Name::Numbered);
-    let container_name = generator.next().unwrap();
+pub fn create_container(name: &str) {
     //** Create mount namespace (isolates your filesystem operations) **//
     unshare(CloneFlags::CLONE_NEWNS).expect("Failed to create a mounted namespace");
     let path = env::var("BENTO_PATH").expect("Path var to be set.");
 
-    // home/cquick/Desktop/dev/temp/<something>
-    let container_dir = Path::new(&path).join(&container_name);
+    let container_dir = Path::new(&path).join(name);
     fs::create_dir_all(&container_dir).expect("Failed to create container_dir");
 
     //** Create your container root directory **//
@@ -33,7 +30,6 @@ pub fn create_namespace() {
 
     //** Mount/copy your container filesystem into that directory **//
     let lowerdir = Path::new(&path).join("temp_untar");
-    // let lowerdir: &'static str = "/home/cquick/Desktop/dev/temp/temp_untar";
 
     // Values for the filesystemtype argument supported by the kernel are
     // listed in /proc/filesystems
@@ -47,7 +43,6 @@ pub fn create_namespace() {
         upperdir.display(),
         workdir.display()
     );
-    println!("{}", overlay_options);
     let overlay_options = &overlay_options[..];
     let data = Some(overlay_options);
 
@@ -55,8 +50,8 @@ pub fn create_namespace() {
 
     //** Create PID namespace **//
     unshare(CloneFlags::CLONE_NEWPID).expect("Failed to create a PID namespace");
-    unshare(CloneFlags::CLONE_NEWUTS).expect("Failed to create uts namespace");
     //** UTS namespace **//
+    unshare(CloneFlags::CLONE_NEWUTS).expect("Failed to create uts namespace");
 
     //** Fork into the namespace **//
     match unsafe { fork() } {
@@ -68,8 +63,7 @@ pub fn create_namespace() {
             chroot(&merge).expect("chroot failed");
             std::env::set_current_dir("/").expect("failed to cd to root");
 
-            // let mut generator = Generator::with_naming(Name::Numbered);
-            sethostname(&container_name).expect("Failed to set hostname");
+            sethostname(name).expect("Failed to set hostname");
             let path = CString::new("/bin/bash").unwrap();
             let arg1 = CString::new("bash").unwrap();
             let args = vec![arg1];
