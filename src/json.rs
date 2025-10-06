@@ -133,3 +133,105 @@ pub struct ManifestLayers {
     digest: String,
     size: i32,
 }
+
+fn create_bento_json<P: AsRef<Path>>(read_path: P, write_path: P) -> Result<()> {
+    eprint!("{}", "Reading image config\n".blue());
+    // Open the file in read-only mode with buffer.
+    let file = File::open(read_path).expect("couldnt open");
+    let reader = BufReader::new(file);
+
+    // Read the JSON contents of the file as an instance of `Address`.
+    let a: IncomingJson = serde_json::from_reader(reader)?;
+    eprint!("Incoming Json: {:?}", a);
+    let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(&a);
+    eprint!("Bento Json: {:?}", bento_config);
+    write_bento_config(write_path, bento_config)?;
+    Ok(())
+}
+
+fn write_bento_config<P: AsRef<Path>>(write_path: P, bento: BentoConfigJson) -> Result<()> {
+    eprint!("{}\n", "Creating and writing config.🍱".green());
+    let file = File::create(write_path).expect("couldnt open");
+    let mut writer = BufWriter::new(file);
+    to_writer_pretty(&mut writer, &bento).unwrap();
+    writer.flush().expect("Failed to flush the writer");
+    eprint!("{}\n", "🎉 Bento finished 🎉".cyan());
+    Ok(())
+}
+
+fn get_config_path(digest: &str) -> Option<PathBuf> {
+    // let mut new_diff_ids: Vec<String> = Vec::with_capacity(rootfs.diff_ids.len());
+    match digest.find(":") {
+        None => None,
+        Some(colon_index) => {
+            let mut config_path = PathBuf::from("blobs");
+            config_path.push(&digest[0..colon_index]);
+            config_path.push(&digest[colon_index + 1..]);
+            Some(config_path)
+        }
+    }
+}
+
+fn get_index_json(mut cont_path: PathBuf) -> Result<IndexJson> {
+    cont_path.push("index.json");
+    let file = File::open(&cont_path).expect("Couldnt open Index.json");
+    let reader = BufReader::new(file);
+    // Read the JSON contents of the file as an instance of `Address`.
+    let a: IndexJson = serde_json::from_reader(reader)?;
+    Ok(a)
+}
+
+fn get_manifest_json(manifest_path: &PathBuf) -> Result<ManifestJson> {
+    // cont_path.push("index.json");
+    let file = File::open(&manifest_path).expect("Couldnt open Index.json");
+    let reader = BufReader::new(file);
+    // Read the JSON contents of the file as an instance of `Address`.
+    let a: ManifestJson = serde_json::from_reader(reader)?;
+    Ok(a)
+}
+
+///Users/c_quick/dev/containers/test_images/python
+fn read_write_json() {
+    let container_str = String::from("/Users/c_quick/dev/containers/test_images/python");
+    let write_path: PathBuf =
+        PathBuf::from("/Users/c_quick/dev/containers/test_images/python/bento_config.json");
+    let cont_path: PathBuf = PathBuf::from(&container_str);
+    let index_json = get_index_json(cont_path).expect("Could not read from index.json");
+    let manifest_path = get_config_path(&index_json.manifests[0].digest);
+    match manifest_path {
+        None => panic!("No config"),
+        Some(manifest) => {
+            let please_remove = PathBuf::from(&container_str).join(&manifest);
+            let manifest_json =
+                get_manifest_json(&please_remove).expect("Couldnt get the manifest.json");
+            let config_path = get_config_path(&manifest_json.config.digest);
+            match config_path {
+                None => panic!("No config"),
+                Some(bento_config) => {
+                    let please_remove = PathBuf::from(&container_str).join(&bento_config);
+                    create_bento_json(please_remove, write_path)
+                        .expect("Failed to create bento json");
+                }
+            }
+        }
+    }
+}
+
+fn _get_layer_dir(rootfs: &RootFs) -> RootFs {
+    let mut new_diff_ids: Vec<String> = Vec::with_capacity(rootfs.diff_ids.len());
+    for (_, val) in rootfs.diff_ids.iter().enumerate() {
+        if let Some(colon_index) = val.find(":") {
+            let mut layer_path = String::from("/blobs/");
+            layer_path.push_str(&val[0..colon_index]);
+            layer_path.push_str("/");
+            layer_path.push_str(&val[colon_index + 1..]);
+            new_diff_ids.push(layer_path);
+        }
+    }
+
+    let updated_rootfs = RootFs {
+        fs_type: rootfs.fs_type.clone(),
+        diff_ids: new_diff_ids,
+    };
+    updated_rootfs
+}
