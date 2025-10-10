@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 pub struct IncomingJson {
     architecture: String,
     config: IncomingConfig,
-    rootfs: RootFs,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -19,27 +18,22 @@ pub struct IncomingConfig {
     #[serde(rename = "Cmd")]
     cmd: Vec<String>,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct RootFs {
-    #[serde(rename = "type")]
-    fs_type: String,
-    diff_ids: Vec<String>,
-}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BentoConfigJson {
     architecture: String,
     cmd: Vec<String>,
     env: Vec<String>,
-    rootfs: RootFs,
+    image_layers: ImageLayers,
 }
 
 impl BentoConfigJson {
-    fn make_bento_config(a: &IncomingJson) -> BentoConfigJson {
+    fn make_bento_config(a: &IncomingJson, image_layers: &ImageLayers) -> BentoConfigJson {
         BentoConfigJson {
             architecture: a.architecture.to_owned(),
             cmd: a.config.cmd.clone(),
             env: a.config.env.clone(),
-            rootfs: a.rootfs.clone(),
+            image_layers: image_layers.clone(),
         }
     }
 }
@@ -72,6 +66,10 @@ pub struct ManifestJson {
     config: ManifestConfig,
     layers: Vec<ManifestLayers>,
 }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ImageLayers {
+    layers: Vec<String>,
+}
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ManifestConfig {
     #[serde(rename = "mediaType")]
@@ -86,7 +84,11 @@ pub struct ManifestLayers {
     digest: String,
 }
 
-fn create_bento_json<P: AsRef<Path>>(read_path: P, write_path: P) -> Result<()> {
+fn create_bento_json<P: AsRef<Path>>(
+    read_path: P,
+    write_path: P,
+    image_layers: ImageLayers,
+) -> Result<()> {
     eprint!("{}", "Reading image config\n".blue());
     // Open the file in read-only mode with buffer.
     let file = File::open(read_path).expect("couldnt open");
@@ -95,7 +97,7 @@ fn create_bento_json<P: AsRef<Path>>(read_path: P, write_path: P) -> Result<()> 
     // Read the JSON contents of the file as an instance of `Address`.
     let a: IncomingJson = serde_json::from_reader(reader)?;
     eprint!("Incoming Json: {:?}", a);
-    let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(&a);
+    let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(&a, &image_layers);
     eprint!("Bento Json: {:?}", bento_config);
     write_bento_config(write_path, bento_config)?;
     Ok(())
@@ -112,7 +114,6 @@ fn write_bento_config<P: AsRef<Path>>(write_path: P, bento: BentoConfigJson) -> 
 }
 
 fn get_config_path(digest: &str) -> Option<PathBuf> {
-    // let mut new_diff_ids: Vec<String> = Vec::with_capacity(rootfs.diff_ids.len());
     match digest.find(":") {
         None => None,
         Some(colon_index) => {
@@ -198,12 +199,14 @@ pub fn read_write_json(cont_path: PathBuf) {
 
                         let manifest_json = get_manifest_json(&please_remove)
                             .expect("Couldnt get the manifest.json");
+                        let image_layers = get_layers_from_manifest(manifest_json.layers)
+                            .expect("Failed to get image layers from manifest");
                         let config_path = get_config_path(&manifest_json.config.digest);
                         match config_path {
                             None => panic!("No config"),
                             Some(bento_config) => {
                                 let please_remove = PathBuf::from(&tmp_path).join(&bento_config);
-                                create_bento_json(please_remove, write_path)
+                                create_bento_json(please_remove, write_path, image_layers)
                                     .expect("Failed to create bento json");
                             }
                         }
@@ -214,21 +217,18 @@ pub fn read_write_json(cont_path: PathBuf) {
     }
 }
 
-fn _get_layer_dir(rootfs: &RootFs) -> RootFs {
-    let mut new_diff_ids: Vec<String> = Vec::with_capacity(rootfs.diff_ids.len());
-    for (_, val) in rootfs.diff_ids.iter().enumerate() {
-        if let Some(colon_index) = val.find(":") {
+fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> {
+    let mut image_layers: Vec<String> = Vec::with_capacity(layers.len());
+    for (_, val) in layers.iter().enumerate() {
+        if let Some(colon_index) = val.digest.find(":") {
             let mut layer_path = String::from("/blobs/");
-            layer_path.push_str(&val[0..colon_index]);
+            layer_path.push_str(&val.digest[0..colon_index]);
             layer_path.push_str("/");
-            layer_path.push_str(&val[colon_index + 1..]);
-            new_diff_ids.push(layer_path);
+            layer_path.push_str(&val.digest[colon_index + 1..]);
+            image_layers.push(layer_path);
         }
     }
-
-    let updated_rootfs = RootFs {
-        fs_type: rootfs.fs_type.clone(),
-        diff_ids: new_diff_ids,
-    };
-    updated_rootfs
+    Ok(ImageLayers {
+        layers: image_layers,
+    })
 }
