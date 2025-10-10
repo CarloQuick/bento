@@ -1,6 +1,7 @@
 use flate2::Compression;
 use flate2::write::{GzDecoder, GzEncoder};
 use std::fs::File;
+use std::path::PathBuf;
 use tar::Archive;
 
 /// USAGE
@@ -25,11 +26,15 @@ pub fn _create_tar_ball(
     Ok(())
 }
 
-pub fn decompress_tarball(path: &str, destination: &str) -> Result<(), std::io::Error> {
+pub fn _decompress_tarball(path: &str, destination: &str) -> Result<(), std::io::Error> {
     let tar_gz = File::open(path)?;
     let tar = GzDecoder::new(tar_gz);
     let mut archive = Archive::new(tar);
     archive.unpack(destination)?;
 
     Ok(())
+}
+pub fn unpack_archive(source: PathBuf, dest: PathBuf) {
+    let mut ar = Archive::new(File::open(source).unwrap());
+    ar.unpack(dest).unwrap();
 }
