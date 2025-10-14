@@ -16,17 +16,16 @@ fn main() {
     let mut tar = String::from(&cont_name);
     tar.push_str(".tar");
 
-    let image_path = PathBuf::from(&bento_images_env).join(&cont_name);
+    let bento_image_path = PathBuf::from(&bento_images_env).join(&cont_name);
     // .bento/images/python:3.14.0rc3-slim-trixie.tar
     let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
     // .bento/containers/python:3.14.0rc3-slim-trixie
-    // let bento_containers_path = PathBuf::from(&bento_containers_env).join(&cont_name);
-    // .bento/containers/python:3.14.0rc3-slim-trixie/tmp
-    // let extract_dest = bento_containers_path.join("tmp");
-    // Creates .bento/containers/python:3.14.0rc3-slim-trixie/tmp and its parent directories
-    fs::create_dir_all(&image_path).expect("Failed to create container dir");
+    let bento_containers_path = PathBuf::from(&bento_containers_env).join(&cont_name);
+
+    fs::create_dir_all(&bento_image_path).expect("Failed to create image dir");
+    fs::create_dir_all(&bento_containers_path).expect("Failed to create container dir");
     // .bento/images/python:3.14.0rc3-slim-trixie.tar => .bento/containers/python:3.14.0rc3-slim-trixie/tmp
-    extract::unpack_archive(&image_tar_path, &image_path);
+    extract::unpack_archive(&image_tar_path, &bento_image_path);
     // .bento/containers/python:3.14.0rc3-slim-trixie and reads index.json and blobs
-    //json::read_write_json(bento_containers_path);
+    json::read_write_json(&bento_image_path, &bento_containers_path);
 }

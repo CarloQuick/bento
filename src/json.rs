@@ -160,15 +160,15 @@ fn get_nested_manifest(
 }
 
 // TESTING .bento/containers/python
-pub fn read_write_json(cont_path: PathBuf) {
+pub fn read_write_json(bento_image_path: &PathBuf, cont_path: &PathBuf) {
     // it writes config to bento container path
     let write_path: PathBuf = PathBuf::from(&cont_path).join("bento_config.json");
     eprintln!("write_path {:?}\n", write_path);
     // the untarred images path at tmp
-    let tmp_path: PathBuf = PathBuf::from(&cont_path).join("tmp");
-    eprintln!("tmp_path {:?}\n", tmp_path);
+    // let tmp_path: PathBuf = PathBuf::from(&cont_path).join("tmp");
+    // eprintln!("tmp_path {:?}\n", tmp_path);
     // blobs | index.json | manifest.json | oci-layout
-    let index_json_path: PathBuf = PathBuf::from(&tmp_path).join("index.json");
+    let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     eprintln!("index_json_path {:?}\n", index_json_path);
     let index_json = get_index_json(&index_json_path).expect("Could not read from index.json");
     eprintln!("index_json {:?}\n", index_json);
@@ -183,18 +183,18 @@ pub fn read_write_json(cont_path: PathBuf) {
         eprintln!("nested_index_json_path {:?}\n", nested_index_json_path);
 
         if let Some(nested_path) = &nested_index_json_path {
-            let amd64_manifest = get_nested_manifest(&tmp_path, &nested_index_json_path);
+            let amd64_manifest = get_nested_manifest(&bento_image_path, &nested_index_json_path);
             if let Some(index) = amd64_manifest {
                 // now that we have an index we want the nested index.json
-                let nested_json =
-                    get_index_json(&tmp_path.join(nested_path)).expect("Failed to get nested JSON");
+                let nested_json = get_index_json(&bento_image_path.join(nested_path))
+                    .expect("Failed to get nested JSON");
                 let manifest_path = get_config_path(&nested_json.manifests[index].digest);
                 eprintln!("manifest_path: {:?}", manifest_path);
 
                 match manifest_path {
                     None => panic!("No config"),
                     Some(manifest) => {
-                        let please_remove = PathBuf::from(&tmp_path).join(&manifest);
+                        let please_remove = PathBuf::from(&bento_image_path).join(&manifest);
                         eprintln!("please_remove: {:?}", please_remove);
 
                         let manifest_json = get_manifest_json(&please_remove)
@@ -205,7 +205,9 @@ pub fn read_write_json(cont_path: PathBuf) {
                         match config_path {
                             None => panic!("No config"),
                             Some(bento_config) => {
-                                let please_remove = PathBuf::from(&tmp_path).join(&bento_config);
+                                let please_remove =
+                                    PathBuf::from(&bento_image_path).join(&bento_config);
+                                println!("WRITE PATH: {:?}", write_path);
                                 create_bento_json(please_remove, write_path, image_layers)
                                     .expect("Failed to create bento json");
                             }
