@@ -17,12 +17,15 @@ fn main() {
     tar.push_str(".tar");
 
     let bento_image_path = PathBuf::from(&bento_images_env).join(&cont_name);
+    let bento_image_rootfs_path = PathBuf::from(&bento_image_path).join("rootfs");
+
     // .bento/images/python:3.14.0rc3-slim-trixie.tar
     let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
     // .bento/containers/python:3.14.0rc3-slim-trixie
     let bento_containers_path = PathBuf::from(&bento_containers_env).join(&cont_name);
 
     fs::create_dir_all(&bento_image_path).expect("Failed to create image dir");
+    fs::create_dir(bento_image_rootfs_path).expect("Failed to creat image rootfs dir");
     fs::create_dir_all(&bento_containers_path).expect("Failed to create container dir");
     // .bento/images/python:3.14.0rc3-slim-trixie.tar => .bento/containers/python:3.14.0rc3-slim-trixie/tmp
     extract::unpack_archive(&image_tar_path, &bento_image_path);
