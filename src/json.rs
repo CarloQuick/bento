@@ -27,6 +27,7 @@ pub struct BentoConfigJson {
     env: Vec<String>,
     image_layers: ImageLayers,
     image_dir: PathBuf,
+    rootfs: Vec<String>,
 }
 
 impl BentoConfigJson {
@@ -34,6 +35,7 @@ impl BentoConfigJson {
         a: &IncomingJson,
         image_layers: &ImageLayers,
         read_path: &PathBuf,
+        rootfs: &Vec<String>,
     ) -> BentoConfigJson {
         BentoConfigJson {
             architecture: a.architecture.to_owned(),
@@ -41,6 +43,7 @@ impl BentoConfigJson {
             env: a.config.env.clone(),
             image_layers: image_layers.clone(),
             image_dir: read_path.clone(),
+            rootfs: rootfs.clone(),
         }
     }
 }
@@ -104,8 +107,18 @@ fn create_bento_json<P: AsRef<Path>>(
     // Read the JSON contents of the file as an instance of `Address`.
     let a: IncomingJson = serde_json::from_reader(reader)?;
     // let image_path = PathBuf::from(read_path.as_ref());
+    let mut rootfs: Vec<String> = Vec::with_capacity(image_layers.layers.len());
+    for (_, val) in image_layers.layers.iter().enumerate() {
+        let mut path = image_path
+            .clone()
+            .into_os_string()
+            .into_string()
+            .expect("Failed to create rootfs path");
+        path.push_str(val);
+        rootfs.push(path.to_string());
+    }
     let bento_config: BentoConfigJson =
-        BentoConfigJson::make_bento_config(&a, &image_layers, &image_path);
+        BentoConfigJson::make_bento_config(&a, &image_layers, &image_path, &rootfs);
     eprint!("Bento Json: {:?}", bento_config);
     write_bento_config(write_path, &bento_config)?;
 
