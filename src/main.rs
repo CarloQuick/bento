@@ -6,10 +6,10 @@ use std::{env, fs, path::PathBuf};
 fn main() {
     dotenv().ok();
     // .bento/images
-    let s_path: String =
+    let bento_images_env: String =
         env::var("BENTO_IMAGES_PATH").expect("Failed to get images path from .env");
     // .bento/containers
-    let d_path: String =
+    let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
     // python.tar = hardcoded tar
     let cont_name = String::from("python");
@@ -17,15 +17,15 @@ fn main() {
     tar.push_str(".tar");
 
     // .bento/images/python.tar
-    let source = PathBuf::from(&s_path).join(&tar);
+    let bento_images_path = PathBuf::from(&bento_images_env).join(&tar);
     // .bento/containers/python
-    let dest = PathBuf::from(&d_path).join(&cont_name);
+    let bento_containers_path = PathBuf::from(&bento_containers_env).join(&cont_name);
     // .bento/containers/python/tmp
-    let extract_dest = dest.join("tmp");
+    let extract_dest = bento_containers_path.join("tmp");
     // Creates .bento/containers/python/tmp and its parent directories
     fs::create_dir_all(&extract_dest).expect("Failed to create container dir");
     // .bento/images/python.tar => .bento/containers/python/tmp
-    extract::unpack_archive(source, extract_dest);
+    extract::unpack_archive(bento_images_path, extract_dest);
     // .bento/containers/python and reads index.json and blobs
-    json::read_write_json(dest);
+    json::read_write_json(bento_containers_path);
 }
