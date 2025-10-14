@@ -34,7 +34,7 @@ pub fn _decompress_tarball(path: &str, destination: &str) -> Result<(), std::io:
 
     Ok(())
 }
-pub fn unpack_archive(source: PathBuf, dest: PathBuf) {
+pub fn unpack_archive(source: &PathBuf, dest: &PathBuf) {
     let mut ar = Archive::new(File::open(source).unwrap());
     ar.unpack(dest).unwrap();
 }
