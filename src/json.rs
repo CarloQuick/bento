@@ -1,11 +1,10 @@
+use crate::extract;
 use colored::Colorize;
-use flate2::read;
 use serde::{Deserialize, Serialize};
 use serde_json::{Result, to_writer_pretty};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct IncomingJson {
     architecture: String,
@@ -20,7 +19,7 @@ pub struct IncomingConfig {
     cmd: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BentoConfigJson {
     architecture: String,
     cmd: Vec<String>,
@@ -28,6 +27,7 @@ pub struct BentoConfigJson {
     image_layers: ImageLayers,
     image_dir: PathBuf,
     rootfs: Vec<String>,
+    lower_dir: Vec<String>,
 }
 
 impl BentoConfigJson {
@@ -36,6 +36,7 @@ impl BentoConfigJson {
         image_layers: &ImageLayers,
         read_path: &PathBuf,
         rootfs: &Vec<String>,
+        lower_dir: &Vec<String>,
     ) -> BentoConfigJson {
         BentoConfigJson {
             architecture: a.architecture.to_owned(),
@@ -44,6 +45,7 @@ impl BentoConfigJson {
             image_layers: image_layers.clone(),
             image_dir: read_path.clone(),
             rootfs: rootfs.clone(),
+            lower_dir: lower_dir.clone(),
         }
     }
 }
@@ -117,9 +119,22 @@ fn create_bento_json<P: AsRef<Path>>(
         path.push_str(val);
         rootfs.push(path.to_string());
     }
+    let mut lower_dir_vec: Vec<String> = Vec::with_capacity(rootfs.len());
+    for (i, path) in rootfs.iter().enumerate().rev() {
+        let mut lowerdir = String::from("lowerdir");
+        lowerdir.push_str(&i.to_string());
+        let path_to_lower: PathBuf = PathBuf::from(&image_path).join(&lowerdir);
+        let path_to_lower_string = &path_to_lower
+            .clone()
+            .into_os_string()
+            .into_string()
+            .expect("Failed to create rootfs path");
+        extract::decompress_tarball(&path, &path_to_lower_string)
+            .expect("Failed to ungzip tarball");
+        lower_dir_vec.push(path_to_lower_string.to_owned());
+    }
     let bento_config: BentoConfigJson =
-        BentoConfigJson::make_bento_config(&a, &image_layers, &image_path, &rootfs);
-    eprint!("Bento Json: {:?}", bento_config);
+        BentoConfigJson::make_bento_config(&a, &image_layers, &image_path, &rootfs, &lower_dir_vec);
     write_bento_config(write_path, &bento_config)?;
 
     Ok(bento_config)
@@ -209,13 +224,14 @@ pub fn read_write_json(bento_image_path: &PathBuf, cont_path: &PathBuf) {
                             Some(bento_config) => {
                                 let please_remove =
                                     PathBuf::from(&bento_image_path).join(&bento_config);
-                                let bento_config_json = create_bento_json(
+                                create_bento_json(
                                     please_remove,
                                     write_path,
                                     image_layers,
                                     &bento_image_path,
                                 )
                                 .expect("Failed to create bento json");
+                                // use the bento_config
                             }
                         }
                     }
