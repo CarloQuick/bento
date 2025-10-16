@@ -1,10 +1,12 @@
 extern crate dotenv;
-use bento::{extract, json};
+use bento::{bento_cli::Cli, extract, json};
+use clap::Parser;
 use dotenv::dotenv;
 use std::{env, fs, path::PathBuf};
-
 fn main() {
     dotenv().ok();
+    let cli = Cli::parse();
+
     // .bento/images
     let bento_images_env: String =
         env::var("BENTO_IMAGES_PATH").expect("Failed to get images path from .env");
