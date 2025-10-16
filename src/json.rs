@@ -21,6 +21,7 @@ pub struct IncomingConfig {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BentoConfigJson {
+    name: String,
     architecture: String,
     cmd: Vec<String>,
     env: Vec<String>,
@@ -32,6 +33,7 @@ pub struct BentoConfigJson {
 
 impl BentoConfigJson {
     fn make_bento_config(
+        name: &String,
         a: &IncomingJson,
         image_layers: &ImageLayers,
         read_path: &PathBuf,
@@ -39,6 +41,7 @@ impl BentoConfigJson {
         lower_dir: &Vec<String>,
     ) -> BentoConfigJson {
         BentoConfigJson {
+            name: name.clone(),
             architecture: a.architecture.to_owned(),
             cmd: a.config.cmd.clone(),
             env: a.config.env.clone(),
@@ -97,6 +100,7 @@ pub struct ManifestLayers {
 }
 
 fn create_bento_json<P: AsRef<Path>>(
+    name: &String,
     read_path: P,
     write_path: P,
     image_layers: ImageLayers,
@@ -133,8 +137,14 @@ fn create_bento_json<P: AsRef<Path>>(
             .expect("Failed to ungzip tarball");
         lower_dir_vec.push(path_to_lower_string.to_owned());
     }
-    let bento_config: BentoConfigJson =
-        BentoConfigJson::make_bento_config(&a, &image_layers, &image_path, &rootfs, &lower_dir_vec);
+    let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(
+        name,
+        &a,
+        &image_layers,
+        &image_path,
+        &rootfs,
+        &lower_dir_vec,
+    );
     write_bento_config(write_path, &bento_config)?;
 
     Ok(bento_config)
@@ -196,7 +206,7 @@ fn get_nested_manifest(
 }
 
 // TESTING .bento/containers/python
-pub fn read_write_json(bento_image_path: &PathBuf, cont_path: &PathBuf) {
+pub fn read_write_json(name: &String, bento_image_path: &PathBuf, cont_path: &PathBuf) {
     let write_path: PathBuf = PathBuf::from(&cont_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_index_json(&index_json_path).expect("Could not read from index.json");
@@ -225,6 +235,7 @@ pub fn read_write_json(bento_image_path: &PathBuf, cont_path: &PathBuf) {
                                 let please_remove =
                                     PathBuf::from(&bento_image_path).join(&bento_config);
                                 create_bento_json(
+                                    name,
                                     please_remove,
                                     write_path,
                                     image_layers,
