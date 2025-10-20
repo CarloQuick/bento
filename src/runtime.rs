@@ -75,18 +75,18 @@ fn unshare_mount_namespace() {
     unshare(CloneFlags::CLONE_NEWNS).expect("Failed to create a mounted namespace");
 }
 fn mount_fs_overlay(name: &str) -> (PathBuf, PathBuf) {
-    // let path = env::var("BENTO_PATH").expect("Path var to be set.");
+    let path = env::var("BENTO_PATH").expect("Path var to be set.");
 
-    // let container_dir = Path::new(&path).join(name);
-    // fs::create_dir_all(&container_dir).expect("Failed to create container_dir");
+    let container_dir = Path::new(&path).join(name);
+    fs::create_dir_all(&container_dir).expect("Failed to create container_dir");
 
-    // //** Create your container root directory **//
-    // let upperdir = container_dir.join("upper");
-    // let workdir = container_dir.join("workdir");
-    // let merge = container_dir.join("merge");
-    // fs::create_dir(&upperdir).expect("Failed to create upperdir");
-    // fs::create_dir(&workdir).expect("Failed to creat workdir");
-    // fs::create_dir(&merge).expect("Failed to creat merge");
+    //** Create your container root directory **//
+    let upperdir = container_dir.join("upper");
+    let workdir = container_dir.join("workdir");
+    let merge = container_dir.join("merge");
+    fs::create_dir(&upperdir).expect("Failed to create upperdir");
+    fs::create_dir(&workdir).expect("Failed to creat workdir");
+    fs::create_dir(&merge).expect("Failed to creat merge");
 
     //** Mount/copy your container filesystem into that directory **//
     // iterate over vec and make it
