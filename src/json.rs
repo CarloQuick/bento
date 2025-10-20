@@ -207,7 +207,7 @@ fn get_nested_manifest(
 
 // TESTING .bento/containers/python
 pub fn read_write_json(name: &String, bento_image_path: &PathBuf, bento_container_path: &PathBuf) {
-    let write_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
+    let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_index_json(&index_json_path).expect("Could not read from index.json");
     if index_json.manifests[0].media_type.contains("image.index") {
@@ -219,30 +219,31 @@ pub fn read_write_json(name: &String, bento_image_path: &PathBuf, bento_containe
                 // now that we have an index we want the nested index.json
                 let nested_json = get_index_json(&bento_image_path.join(nested_path))
                     .expect("Failed to get nested JSON");
-                let manifest_path = get_config_path(&nested_json.manifests[index].digest);
-                match manifest_path {
+                let manifest_path_option = get_config_path(&nested_json.manifests[index].digest);
+                match manifest_path_option {
                     None => panic!("No config"),
-                    Some(manifest) => {
-                        let please_remove = PathBuf::from(&bento_image_path).join(&manifest);
-                        let manifest_json = get_manifest_json(&please_remove)
+                    Some(manifest_path) => {
+                        let full_manifest_path =
+                            PathBuf::from(&bento_image_path).join(&manifest_path);
+                        let manifest_json = get_manifest_json(&full_manifest_path)
                             .expect("Couldnt get the manifest.json");
                         let image_layers = get_layers_from_manifest(manifest_json.layers)
                             .expect("Failed to get image layers from manifest");
-                        let config_path = get_config_path(&manifest_json.config.digest);
-                        match config_path {
+                        let manifest_config_path_option =
+                            get_config_path(&manifest_json.config.digest);
+                        match manifest_config_path_option {
                             None => panic!("No config"),
-                            Some(bento_config) => {
-                                let please_remove =
-                                    PathBuf::from(&bento_image_path).join(&bento_config);
+                            Some(manifest_config_path) => {
+                                let full_manifest_config_path =
+                                    PathBuf::from(&bento_image_path).join(&manifest_config_path);
                                 create_bento_json(
                                     name,
-                                    please_remove,
-                                    write_path,
+                                    full_manifest_config_path,
+                                    bento_config_path,
                                     image_layers,
                                     &bento_image_path,
                                 )
                                 .expect("Failed to create bento json");
-                                // use the bento_config
                             }
                         }
                     }
