@@ -206,8 +206,8 @@ fn get_nested_manifest(
 }
 
 // TESTING .bento/containers/python
-pub fn read_write_json(name: &String, bento_image_path: &PathBuf, cont_path: &PathBuf) {
-    let write_path: PathBuf = PathBuf::from(&cont_path).join("bento_config.json");
+pub fn read_write_json(name: &String, bento_image_path: &PathBuf, bento_container_path: &PathBuf) {
+    let write_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_index_json(&index_json_path).expect("Could not read from index.json");
     if index_json.manifests[0].media_type.contains("image.index") {
