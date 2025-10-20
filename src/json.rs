@@ -1,212 +1,15 @@
-use crate::extract;
-use colored::Colorize;
-use serde::{Deserialize, Serialize};
-use serde_json::{Result, to_writer_pretty};
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Write};
-use std::path::{Path, PathBuf};
-#[derive(Serialize, Deserialize, Debug)]
-pub struct IncomingJson {
-    architecture: String,
-    config: IncomingConfig,
-}
+use crate::config::{ImageLayers, create_bento_json};
+use crate::oci::{
+    ManifestLayers, get_config_path, get_index_json, get_manifest_json, get_nested_manifest,
+};
+use serde_json::Result;
+use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct IncomingConfig {
-    #[serde(rename = "Env")]
-    env: Vec<String>,
-    #[serde(rename = "Cmd")]
-    cmd: Vec<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BentoConfigJson {
-    name: String,
-    architecture: String,
-    cmd: Vec<String>,
-    env: Vec<String>,
-    image_layers: ImageLayers,
-    image_dir: PathBuf,
-    rootfs: Vec<String>,
-    lower_dir: Vec<String>,
-}
-
-impl BentoConfigJson {
-    fn make_bento_config(
-        name: &String,
-        a: &IncomingJson,
-        image_layers: &ImageLayers,
-        read_path: &PathBuf,
-        rootfs: &Vec<String>,
-        lower_dir: &Vec<String>,
-    ) -> BentoConfigJson {
-        BentoConfigJson {
-            name: name.clone(),
-            architecture: a.architecture.to_owned(),
-            cmd: a.config.cmd.clone(),
-            env: a.config.env.clone(),
-            image_layers: image_layers.clone(),
-            image_dir: read_path.clone(),
-            rootfs: rootfs.clone(),
-            lower_dir: lower_dir.clone(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct IndexJson {
-    #[serde(rename = "mediaType")]
-    media_type: String,
-    manifests: Vec<Manifests>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Manifests {
-    #[serde(rename = "mediaType")]
-    media_type: String,
-    digest: String,
-    platform: Option<Platform>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Platform {
-    architecture: String,
-    os: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ManifestJson {
-    #[serde(rename = "mediaType")]
-    media_type: String,
-    config: ManifestConfig,
-    layers: Vec<ManifestLayers>,
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ImageLayers {
-    layers: Vec<String>,
-}
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ManifestConfig {
-    #[serde(rename = "mediaType")]
-    media_type: String,
-    digest: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ManifestLayers {
-    #[serde(rename = "mediaType")]
-    media_type: String,
-    digest: String,
-}
-
-fn create_bento_json<P: AsRef<Path>>(
-    name: &String,
-    read_path: P,
-    write_path: P,
-    image_layers: ImageLayers,
-    image_path: &PathBuf,
-) -> Result<BentoConfigJson> {
-    // Open the file in read-only mode with buffer.
-    let file = File::open(read_path).expect("couldnt open");
-    let reader = BufReader::new(file);
-
-    // Read the JSON contents of the file as an instance of `Address`.
-    let a: IncomingJson = serde_json::from_reader(reader)?;
-    // let image_path = PathBuf::from(read_path.as_ref());
-    let mut rootfs: Vec<String> = Vec::with_capacity(image_layers.layers.len());
-    for (_, val) in image_layers.layers.iter().enumerate() {
-        let mut path = image_path
-            .clone()
-            .into_os_string()
-            .into_string()
-            .expect("Failed to create rootfs path");
-        path.push_str(val);
-        rootfs.push(path.to_string());
-    }
-    let mut lower_dir_vec: Vec<String> = Vec::with_capacity(rootfs.len());
-    for (i, path) in rootfs.iter().enumerate().rev() {
-        let mut lowerdir = String::from("lowerdir");
-        lowerdir.push_str(&i.to_string());
-        let path_to_lower: PathBuf = PathBuf::from(&image_path).join(&lowerdir);
-        let path_to_lower_string = &path_to_lower
-            .clone()
-            .into_os_string()
-            .into_string()
-            .expect("Failed to create rootfs path");
-        extract::decompress_tarball(&path, &path_to_lower_string)
-            .expect("Failed to ungzip tarball");
-        lower_dir_vec.push(path_to_lower_string.to_owned());
-    }
-    let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(
-        name,
-        &a,
-        &image_layers,
-        &image_path,
-        &rootfs,
-        &lower_dir_vec,
-    );
-    write_bento_config(write_path, &bento_config)?;
-
-    Ok(bento_config)
-}
-
-fn write_bento_config<P: AsRef<Path>>(write_path: P, bento: &BentoConfigJson) -> Result<()> {
-    let file = File::create(write_path).expect("couldnt open");
-    let mut writer = BufWriter::new(file);
-    to_writer_pretty(&mut writer, &bento).unwrap();
-    writer.flush().expect("Failed to flush the writer");
-    eprint!("{}\n", "🎉 Bento finished 🎉".cyan());
-    Ok(())
-}
-
-fn get_config_path(digest: &str) -> Option<PathBuf> {
-    match digest.find(":") {
-        None => None,
-        Some(colon_index) => {
-            let mut config_path = PathBuf::from("blobs");
-            config_path.push(&digest[0..colon_index]);
-            config_path.push(&digest[colon_index + 1..]);
-            Some(config_path)
-        }
-    }
-}
-
-fn get_index_json(index_json_path: &PathBuf) -> Result<IndexJson> {
-    let file = File::open(index_json_path).expect("Couldnt open Index.json");
-    let reader = BufReader::new(file);
-    // Read the JSON contents of the file as an instance of `Address`.
-    let a: IndexJson = serde_json::from_reader(reader)?;
-    Ok(a)
-}
-
-fn get_manifest_json(manifest_path: &PathBuf) -> Result<ManifestJson> {
-    let file = File::open(&manifest_path).expect("Couldnt open Index.json");
-    let reader = BufReader::new(file);
-    // Read the JSON contents of the file as an instance of `Address`.
-    let a: ManifestJson = serde_json::from_reader(reader)?;
-    Ok(a)
-}
-
-fn get_nested_manifest(
-    tmp_path: &PathBuf,
-    nested_index_json_path: &Option<PathBuf>,
-) -> Option<usize> {
-    if let Some(nested_path) = nested_index_json_path {
-        let nested_json =
-            get_index_json(&tmp_path.join(nested_path)).expect("Failed to get nested JSON");
-        for (i, manifest) in nested_json.manifests.iter().enumerate() {
-            if let Some(platform_arch) = &manifest.platform {
-                if platform_arch.architecture == "amd64" {
-                    return Some(i);
-                }
-            }
-        }
-    }
-    None
-}
-
-// TESTING .bento/containers/python
-pub fn read_write_json(name: &String, bento_image_path: &PathBuf, bento_container_path: &PathBuf) {
+pub fn read_write_json(
+    container_name: &String,
+    bento_image_path: &PathBuf,
+    bento_container_path: &PathBuf,
+) {
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_index_json(&index_json_path).expect("Could not read from index.json");
@@ -237,11 +40,12 @@ pub fn read_write_json(name: &String, bento_image_path: &PathBuf, bento_containe
                                 let full_manifest_config_path =
                                     PathBuf::from(&bento_image_path).join(&manifest_config_path);
                                 create_bento_json(
-                                    name,
+                                    container_name,
                                     full_manifest_config_path,
                                     bento_config_path,
                                     image_layers,
                                     &bento_image_path,
+                                    &bento_container_path,
                                 )
                                 .expect("Failed to create bento json");
                             }
