@@ -22,7 +22,7 @@ fn main() {
 
             let bento_image_path = PathBuf::from(&bento_images_env).join(image);
             let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
-            let bento_containers_path = PathBuf::from(&bento_containers_env).join(image);
+            let bento_containers_path = PathBuf::from(&bento_containers_env).join(name);
 
             fs::create_dir_all(&bento_image_path).expect("Failed to create image dir");
             fs::create_dir_all(&bento_containers_path).expect("Failed to create container dir");
