@@ -3,7 +3,7 @@ use crate::oci::OciImageConfig;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use serde_json::{Result, to_writer_pretty};
-use std::fs::File;
+use std::fs::{File, create_dir};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::Path;
 use std::path::PathBuf;
@@ -17,7 +17,10 @@ pub struct BentoConfigJson {
     pub image_layers: ImageLayers,
     pub image_dir: PathBuf,
     pub rootfs: Vec<String>,
-    pub lower_dir: Vec<String>,
+    pub lowerdir: Vec<String>,
+    pub upperdir: PathBuf,
+    pub workdir: PathBuf,
+    pub merge: PathBuf,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ImageLayers {
@@ -29,19 +32,25 @@ impl BentoConfigJson {
         name: &String,
         oci_image_config: &OciImageConfig,
         image_layers: &ImageLayers,
-        read_path: &PathBuf,
+        image_path: &PathBuf,
         rootfs: &Vec<String>,
-        lower_dir: &Vec<String>,
+        lowerdir: &Vec<String>,
+        upperdir: &PathBuf,
+        workdir: &PathBuf,
+        merge: &PathBuf,
     ) -> BentoConfigJson {
         BentoConfigJson {
             name: name.clone(),
-            architecture: a.architecture.to_owned(),
+            architecture: oci_image_config.architecture.to_owned(),
             cmd: oci_image_config.config.cmd.clone(),
             env: oci_image_config.config.env.clone(),
             image_layers: image_layers.clone(),
-            image_dir: read_path.clone(),
+            image_dir: image_path.clone(),
             rootfs: rootfs.clone(),
-            lower_dir: lower_dir.clone(),
+            lowerdir: lowerdir.clone(),
+            upperdir: upperdir.clone(),
+            workdir: workdir.clone(),
+            merge: merge.clone(),
         }
     }
 }
@@ -70,7 +79,7 @@ pub fn create_bento_json<P: AsRef<Path>>(
         path.push_str(val);
         rootfs.push(path.to_string());
     }
-    let mut lower_dir_vec: Vec<String> = Vec::with_capacity(rootfs.len());
+    let mut lowerdir_vec: Vec<String> = Vec::with_capacity(rootfs.len());
     for (i, path) in rootfs.iter().enumerate().rev() {
         let mut lowerdir = String::from("lowerdir");
         lowerdir.push_str(&i.to_string());
@@ -82,19 +91,36 @@ pub fn create_bento_json<P: AsRef<Path>>(
             .expect("Failed to create rootfs path");
         extract::decompress_tarball(&path, &path_to_lower_string)
             .expect("Failed to ungzip tarball");
-        lower_dir_vec.push(path_to_lower_string.to_owned());
+        lowerdir_vec.push(path_to_lower_string.to_owned());
     }
+    let (upperdir, workdir, merge) = create_overlayfs(&container_path);
+
     let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(
         name,
         &oci_image_config,
         &image_layers,
         &image_path,
         &rootfs,
-        &lower_dir_vec,
+        &lowerdir_vec,
+        &upperdir,
+        &workdir,
+        &merge,
     );
     write_bento_config(write_path, &bento_config)?;
 
     Ok(bento_config)
+}
+
+pub fn create_overlayfs(container_path: &PathBuf) -> (PathBuf, PathBuf, PathBuf) {
+    //** Create your container root directory **//
+    let upperdir = container_path.join("upper");
+    let workdir = container_path.join("workdir");
+    let merge = container_path.join("merge");
+    create_dir(&upperdir).expect("Failed to create upperdir");
+    create_dir(&workdir).expect("Failed to creat workdir");
+    create_dir(&merge).expect("Failed to creat merge");
+
+    (upperdir, workdir, merge)
 }
 
 pub fn write_bento_config<P: AsRef<Path>>(write_path: P, bento: &BentoConfigJson) -> Result<()> {
