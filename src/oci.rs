@@ -71,7 +71,7 @@ pub fn get_config_path(digest: &str) -> Option<PathBuf> {
     }
 }
 
-pub fn get_index_json(index_json_path: &PathBuf) -> Result<OciIndex> {
+pub fn get_oci_index(index_json_path: &PathBuf) -> Result<OciIndex> {
     let file = File::open(index_json_path).expect("Couldnt open Index.json");
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
@@ -79,7 +79,7 @@ pub fn get_index_json(index_json_path: &PathBuf) -> Result<OciIndex> {
     Ok(a)
 }
 
-pub fn get_manifest_json(manifest_path: &PathBuf) -> Result<OciManifest> {
+pub fn get_oci_manifest(manifest_path: &PathBuf) -> Result<OciManifest> {
     let file = File::open(&manifest_path).expect("Couldnt open Index.json");
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
@@ -93,7 +93,7 @@ pub fn get_nested_manifest(
 ) -> Option<usize> {
     if let Some(nested_path) = nested_index_json_path {
         let nested_json =
-            get_index_json(&tmp_path.join(nested_path)).expect("Failed to get nested JSON");
+            get_oci_index(&tmp_path.join(nested_path)).expect("Failed to get nested JSON");
         for (i, manifest) in nested_json.manifests.iter().enumerate() {
             if let Some(platform_arch) = &manifest.platform {
                 if platform_arch.architecture == "amd64" {
