@@ -27,7 +27,7 @@ pub struct ImageLayers {
 impl BentoConfigJson {
     pub fn make_bento_config(
         name: &String,
-        a: &OciImageConfig,
+        oci_image_config: &OciImageConfig,
         image_layers: &ImageLayers,
         read_path: &PathBuf,
         rootfs: &Vec<String>,
@@ -36,8 +36,8 @@ impl BentoConfigJson {
         BentoConfigJson {
             name: name.clone(),
             architecture: a.architecture.to_owned(),
-            cmd: a.config.cmd.clone(),
-            env: a.config.env.clone(),
+            cmd: oci_image_config.config.cmd.clone(),
+            env: oci_image_config.config.env.clone(),
             image_layers: image_layers.clone(),
             image_dir: read_path.clone(),
             rootfs: rootfs.clone(),
@@ -58,7 +58,7 @@ pub fn create_bento_json<P: AsRef<Path>>(
         File::open(read_path).expect("Failed to open read path while creating bento_config");
     let reader = BufReader::new(read_file);
 
-    let a: OciImageConfig = serde_json::from_reader(reader)?;
+    let oci_image_config: OciImageConfig = serde_json::from_reader(reader)?;
 
     let mut rootfs: Vec<String> = Vec::with_capacity(image_layers.layers.len());
     for (_, val) in image_layers.layers.iter().enumerate() {
@@ -86,7 +86,7 @@ pub fn create_bento_json<P: AsRef<Path>>(
     }
     let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(
         name,
-        &a,
+        &oci_image_config,
         &image_layers,
         &image_path,
         &rootfs,
