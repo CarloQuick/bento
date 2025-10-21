@@ -21,11 +21,7 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
     })
 }
 
-pub fn read_write_json(
-    container_name: &String,
-    bento_image_path: &PathBuf,
-    bento_container_path: &PathBuf,
-) {
+pub fn create(container_name: &String, bento_image_path: &PathBuf, bento_container_path: &PathBuf) {
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_oci_index(&index_json_path).expect("Could not read from index.json");
