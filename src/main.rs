@@ -2,6 +2,7 @@ extern crate dotenv;
 use bento::{
     bento_cli::{Cli, Commands},
     extract, json,
+    runtime::start,
 };
 use clap::Parser;
 use dotenv::dotenv;
@@ -28,6 +29,10 @@ fn main() {
             fs::create_dir_all(&bento_container_path).expect("Failed to create container dir");
             extract::unpack_archive(&image_tar_path, &bento_image_path);
             json::create(name, &bento_image_path, &bento_container_path);
+        }
+        Some(Commands::Start { name }) => {
+            // Later we will access the image json
+            start(name);
         }
         None => {}
     }

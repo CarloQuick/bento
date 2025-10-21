@@ -10,9 +10,11 @@ use nix::{
     unistd::getpid,
 };
 use std::ffi::CString;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process;
 use std::{env, fs};
+
+use crate::config::get_bento_config;
 
 fn _print_uid_map_from_pid() {
     let pid = getpid();
@@ -74,41 +76,43 @@ fn unshare_mount_namespace() {
     // //** Create mount namespace (isolates your filesystem operations) **//
     unshare(CloneFlags::CLONE_NEWNS).expect("Failed to create a mounted namespace");
 }
-fn mount_fs_overlay(name: &str) -> (PathBuf, PathBuf) {
-    let path = env::var("BENTO_PATH").expect("Path var to be set.");
+fn mount_fs_overlay(name: &str) -> PathBuf {
+    let bento_containers_env: String =
+        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
+    let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
+    let bento_config_path = bento_container_path.join("bento_config.json");
+    let bento_config =
+        get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
 
-    let container_dir = Path::new(&path).join(name);
-    fs::create_dir_all(&container_dir).expect("Failed to create container_dir");
+    let mut lowerdir = String::new();
+    for (i, dir) in bento_config.lowerdir.iter().enumerate() {
+        assert!(fs::exists(dir).is_ok());
+        if i == bento_config.lowerdir.len() - 1 {
+            lowerdir.push_str(dir);
+        } else {
+            lowerdir.push_str(dir);
+            lowerdir.push_str(":");
+        }
+    }
 
-    //** Create your container root directory **//
-    let upperdir = container_dir.join("upper");
-    let workdir = container_dir.join("workdir");
-    let merge = container_dir.join("merge");
-    fs::create_dir(&upperdir).expect("Failed to create upperdir");
-    fs::create_dir(&workdir).expect("Failed to creat workdir");
-    fs::create_dir(&merge).expect("Failed to creat merge");
-
-    //** Mount/copy your container filesystem into that directory **//
-    // iterate over vec and make it
-    let lowerdir = Path::new(&path).join("temp_untar");
-
-    // Values for the filesystemtype argument supported by the kernel are
-    // listed in /proc/filesystems
     let fstype = Some("overlay");
     // mount flags
     let flags = MsFlags::empty();
-    //
+    assert!(fs::exists(&bento_config.upperdir).is_ok());
+    assert!(fs::exists(&bento_config.workdir).is_ok());
     let overlay_options = format!(
         "lowerdir={},upperdir={},workdir={}",
-        lowerdir.display(),
-        upperdir.display(),
-        workdir.display()
+        lowerdir,
+        bento_config.upperdir.display(),
+        bento_config.workdir.display()
     );
     let overlay_options = &overlay_options[..];
     let data = Some(overlay_options);
 
-    mount(Some("overlay"), &merge, fstype, flags, data).expect("Failed to Mount Filesystem");
-    (merge, container_dir)
+    mount(Some("overlay"), &bento_config.merge, fstype, flags, data)
+        .expect("Failed to Mount Filesystem");
+
+    bento_config.merge
 }
 fn unshare_pid_and_uts_namespace() {
     //** Create PID namespace **//
@@ -127,9 +131,12 @@ fn fork_into_namespaces(merge: &PathBuf, name: &str) {
             chroot(merge).expect("chroot failed");
             std::env::set_current_dir("/").expect("failed to cd to root");
             sethostname(name).expect("Failed to set hostname");
-            let path = CString::new("/bin/bash").unwrap();
-            let arg1 = CString::new("bash").unwrap();
-            let args = vec![arg1];
+            // let path = CString::new("/bin/bash").unwrap();
+            // let arg1 = CString::new("bash").unwrap();
+            let path = CString::new("/usr/local/bin/python").unwrap();
+            let arg0 = CString::new("python").unwrap();
+            let arg1 = CString::new("--version").unwrap();
+            let args = vec![arg0, arg1];
             let env_var = CString::new("MY_VAR=hello").unwrap();
             let env = vec![env_var];
 
@@ -142,16 +149,20 @@ fn fork_into_namespaces(merge: &PathBuf, name: &str) {
     }
 }
 
-fn unmount_and_clean_up(merge: &PathBuf, container_dir: &PathBuf) {
+fn unmount_and_clean_up(merge: &PathBuf) {
     //** Unmount the container filesystem **//
     umount(merge).expect("Failed to Unmount");
+}
+
+fn _clean_up(container_dir: &PathBuf) {
     fs::remove_dir_all(container_dir).expect("Failed to remove dir");
 }
-pub fn create_container(name: &str) {
+
+pub fn start(name: &str) {
     unshare_user_namespace(); // Get privileges
     unshare_mount_namespace(); // Isolate filesystem
-    let (merge, container_dir) = mount_fs_overlay(&name); // Set up container root
+    let merge = mount_fs_overlay(&name); // Set up container root
     unshare_pid_and_uts_namespace(); // Isolate processes
     fork_into_namespaces(&merge, name); // Run container
-    unmount_and_clean_up(&merge, &container_dir); // Clean exit
+    unmount_and_clean_up(&merge); // Clean exit
 }
