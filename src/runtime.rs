@@ -89,6 +89,7 @@ fn mount_fs_overlay(name: &str) -> (PathBuf, PathBuf) {
     fs::create_dir(&merge).expect("Failed to creat merge");
 
     //** Mount/copy your container filesystem into that directory **//
+    // iterate over vec and make it
     let lowerdir = Path::new(&path).join("temp_untar");
 
     // Values for the filesystemtype argument supported by the kernel are
