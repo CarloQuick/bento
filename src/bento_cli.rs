@@ -10,12 +10,18 @@ pub struct Cli {
 pub enum Commands {
     /// Creates a container without running it
     Create {
-        /// Name of the runnable container
+        /// Name of the container
         #[arg(short, long)]
         name: String,
 
         /// Name of available image
         #[arg(short, long)]
         image: String,
+    },
+    /// Starts a container with the data compiled in "create"
+    Start {
+        /// Name of the already created container
+        #[arg(short, long)]
+        name: String,
     },
 }

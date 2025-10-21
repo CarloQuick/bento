@@ -131,3 +131,11 @@ pub fn write_bento_config<P: AsRef<Path>>(write_path: P, bento: &BentoConfigJson
     eprint!("{}\n", "🎉 Bento finished 🎉".cyan());
     Ok(())
 }
+
+pub fn get_bento_config(bento_path: &PathBuf) -> Result<BentoConfigJson> {
+    let file = File::open(&bento_path).expect("Couldnt open the bento_config.json");
+    let reader = BufReader::new(file);
+    // Read the JSON contents of the file as an instance of `Address`.
+    let bento_config_json: BentoConfigJson = serde_json::from_reader(reader)?;
+    Ok(bento_config_json)
+}
