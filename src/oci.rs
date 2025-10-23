@@ -90,13 +90,14 @@ pub fn get_oci_manifest(manifest_path: &PathBuf) -> Result<OciManifest> {
 pub fn get_nested_manifest(
     tmp_path: &PathBuf,
     nested_index_json_path: &Option<PathBuf>,
+    target_arch: &String,
 ) -> Option<usize> {
     if let Some(nested_path) = nested_index_json_path {
         let nested_json =
             get_oci_index(&tmp_path.join(nested_path)).expect("Failed to get nested JSON");
         for (i, manifest) in nested_json.manifests.iter().enumerate() {
             if let Some(platform_arch) = &manifest.platform {
-                if platform_arch.architecture == "amd64" {
+                if platform_arch.architecture == *target_arch {
                     return Some(i);
                 }
             }

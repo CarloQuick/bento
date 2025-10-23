@@ -20,6 +20,22 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
         layers: image_layers,
     })
 }
+#[cfg(target_arch = "x86")]
+pub fn return_cpu_architecture() -> String {
+    String::from("x86")
+}
+#[cfg(target_arch = "x86_64")]
+pub fn return_cpu_architecture() -> String {
+    String::from("amd64")
+}
+#[cfg(target_arch = "arm")]
+pub fn return_cpu_architecture() -> String {
+    String::from("arm")
+}
+#[cfg(target_arch = "aarch64")]
+pub fn return_cpu_architecture() -> String {
+    String::from("aarch64")
+}
 
 pub fn create(container_name: &String, bento_image_path: &PathBuf, bento_container_path: &PathBuf) {
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
@@ -29,8 +45,10 @@ pub fn create(container_name: &String, bento_image_path: &PathBuf, bento_contain
         let nested_digest = &index_json.manifests[0].digest;
         let nested_index_json_path = get_config_path(nested_digest);
         if let Some(nested_path) = &nested_index_json_path {
-            let amd64_manifest = get_nested_manifest(&bento_image_path, &nested_index_json_path);
-            if let Some(index) = amd64_manifest {
+            let target_arch = return_cpu_architecture();
+            let arch_specific_manifest =
+                get_nested_manifest(&bento_image_path, &nested_index_json_path, &target_arch);
+            if let Some(index) = arch_specific_manifest {
                 // now that we have an index we want the nested index.json
                 let nested_json = get_oci_index(&bento_image_path.join(nested_path))
                     .expect("Failed to get nested JSON");
