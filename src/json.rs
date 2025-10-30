@@ -2,6 +2,7 @@ use crate::config::{ImageLayers, create_bento_json};
 use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
+use core::panic;
 use serde_json::Result;
 use std::path::PathBuf;
 
@@ -37,7 +38,11 @@ pub fn return_cpu_architecture() -> String {
     String::from("aarch64")
 }
 
-pub fn create(container_name: &String, bento_image_path: &PathBuf, bento_container_path: &PathBuf) {
+pub fn create(
+    container_name: &String,
+    bento_image_path: &PathBuf,
+    bento_container_path: &PathBuf,
+) -> (String, PathBuf) {
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_oci_index(&index_json_path).expect("Could not read from index.json");
@@ -85,4 +90,5 @@ pub fn create(container_name: &String, bento_image_path: &PathBuf, bento_contain
             }
         }
     }
+    (container_name.to_string(), bento_container_path.to_owned())
 }
