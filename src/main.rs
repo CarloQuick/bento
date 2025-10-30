@@ -72,7 +72,7 @@ fn main() {
 pub fn read_container_json(container: Container, name: &str) {
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_map.json");
+    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
 
     let mut file = OpenOptions::new()
         .read(true)
