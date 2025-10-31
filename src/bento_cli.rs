@@ -24,4 +24,14 @@ pub enum Commands {
         #[arg(short, long)]
         name: String,
     },
+    /// Returns the status of the identified container
+    Status {
+        /// Name of the already created container
+        #[arg(short, long)]
+        name: Option<String>,
+
+        /// Name all created container
+        #[arg(short, long)]
+        all: bool,
+    },
 }
