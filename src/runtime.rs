@@ -10,11 +10,11 @@ use nix::{
     unistd::getpid,
 };
 use std::ffi::CString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::{env, fs};
 
-use crate::config::get_bento_config;
+use crate::config::{BentoConfigJson, get_bento_config};
 
 fn _print_uid_map_from_pid() {
     let pid = getpid();
@@ -76,13 +76,13 @@ fn unshare_mount_namespace() {
     // //** Create mount namespace (isolates your filesystem operations) **//
     unshare(CloneFlags::CLONE_NEWNS).expect("Failed to create a mounted namespace");
 }
-fn mount_fs_overlay(name: &str) -> PathBuf {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-    let bento_config_path = bento_container_path.join("bento_config.json");
-    let bento_config =
-        get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
+fn mount_fs_overlay(bento_config: &BentoConfigJson) {
+    // let bento_containers_env: String =
+    //     env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
+    // let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
+    // let bento_config_path = bento_container_path.join("bento_config.json");
+    // let bento_config =
+    //     get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
 
     let mut lowerdir = String::new();
     for (i, dir) in bento_config.lowerdir.iter().enumerate() {
@@ -111,16 +111,23 @@ fn mount_fs_overlay(name: &str) -> PathBuf {
 
     mount(Some("overlay"), &bento_config.merge, fstype, flags, data)
         .expect("Failed to Mount Filesystem");
-
-    bento_config.merge
 }
+
+pub fn get_bento_config_path(name: &str) -> PathBuf {
+    let bento_containers_env: String =
+        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
+    let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
+    let bento_config_path = bento_container_path.join("bento_config.json");
+    bento_config_path
+}
+
 fn unshare_pid_and_uts_namespace() {
     //** Create PID namespace **//
     unshare(CloneFlags::CLONE_NEWPID).expect("Failed to create a PID namespace");
     //** UTS namespace **//
     unshare(CloneFlags::CLONE_NEWUTS).expect("Failed to create uts namespace");
 }
-fn fork_into_namespaces(merge: &PathBuf, name: &str) {
+fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) {
     //** Fork into the namespace **//
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child, .. }) => {
@@ -128,17 +135,10 @@ fn fork_into_namespaces(merge: &PathBuf, name: &str) {
         }
         Ok(ForkResult::Child) => {
             //** In the child: chroot into the prepared directory **//
-            chroot(merge).expect("chroot failed");
+            chroot(&bento_config.merge).expect("chroot failed");
             std::env::set_current_dir("/").expect("failed to cd to root");
             sethostname(name).expect("Failed to set hostname");
-            // let path = CString::new("/bin/bash").unwrap();
-            // let arg1 = CString::new("bash").unwrap();
-            let path = CString::new("/usr/local/bin/python").unwrap();
-            let arg0 = CString::new("python").unwrap();
-            let arg1 = CString::new("--version").unwrap();
-            let args = vec![arg0, arg1];
-            let env_var = CString::new("MY_VAR=hello").unwrap();
-            let env = vec![env_var];
+            let (path, args, env) = get_execve_params(bento_config);
 
             execve(&path, &args, &env).expect("Failed to replace process image.");
             process::exit(0);
@@ -147,6 +147,40 @@ fn fork_into_namespaces(merge: &PathBuf, name: &str) {
             println!("❌ Fork failed: {}", e);
         }
     }
+}
+
+fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
+    let mut args: Vec<CString> = Vec::new();
+    let mut env: Vec<CString> = Vec::new();
+    for arg in bento_config.cmd.iter() {
+        args.push(CString::new(arg.to_owned()).unwrap());
+    }
+    for e in bento_config.env.iter() {
+        env.push(CString::new(e.to_owned()).unwrap());
+    }
+    let mut path = String::new();
+
+    if let Some(cmd) = bento_config.cmd.get(0) {
+        if cmd.contains("/") {
+            // hunt in the provided paths
+            path.push_str(cmd);
+        } else {
+            let env_v = get_executable_paths(&bento_config.env);
+            for e in env_v.iter() {
+                if Path::new(e).join(cmd).is_file() {
+                    let p_ath = Path::new(e).join(cmd);
+                    let str = p_ath.to_string_lossy();
+                    match PathBuf::from(e).join(cmd).to_str() {
+                        Some(p) => {
+                            path.push_str(p);
+                        }
+                        None => panic!("Failed to convert execve pathbuf to string"),
+                    }
+                }
+            }
+        }
+    }
+    (CString::new(path).unwrap(), args, env)
 }
 
 fn unmount_and_clean_up(merge: &PathBuf) {
@@ -159,10 +193,29 @@ fn _clean_up(container_dir: &PathBuf) {
 }
 
 pub fn start(name: &str) {
+    let bento_config_path = get_bento_config_path(name);
+    let bento_config =
+        get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
+
     unshare_user_namespace(); // Get privileges
     unshare_mount_namespace(); // Isolate filesystem
-    let merge = mount_fs_overlay(&name); // Set up container root
+    mount_fs_overlay(&bento_config); // Set up container root
     unshare_pid_and_uts_namespace(); // Isolate processes
-    fork_into_namespaces(&merge, name); // Run container
-    unmount_and_clean_up(&merge); // Clean exit
+    fork_into_namespaces(&bento_config, name); // Run container
+    unmount_and_clean_up(&bento_config.merge); // Clean exit
+}
+
+pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {
+    let index = get_path_index(env);
+    let v: Vec<&str> = env[index].split(":").collect();
+    v
+}
+pub fn get_path_index(env: &Vec<String>) -> usize {
+    for (_, e) in env.iter().enumerate() {
+        match e.find("PATH") {
+            None => continue,
+            Some(inx) => return inx,
+        }
+    }
+    panic!("Failed to find PATH in config");
 }

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
-use std::ffi::CString;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -13,9 +12,9 @@ pub struct OciImageConfig {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OciContainerConfig {
     #[serde(rename = "Env")]
-    pub env: Vec<CString>,
+    pub env: Vec<String>,
     #[serde(rename = "Cmd")]
-    pub cmd: Vec<CString>,
+    pub cmd: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
