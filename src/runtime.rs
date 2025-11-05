@@ -77,13 +77,6 @@ fn unshare_mount_namespace() {
     unshare(CloneFlags::CLONE_NEWNS).expect("Failed to create a mounted namespace");
 }
 fn mount_fs_overlay(bento_config: &BentoConfigJson) {
-    // let bento_containers_env: String =
-    //     env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    // let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-    // let bento_config_path = bento_container_path.join("bento_config.json");
-    // let bento_config =
-    //     get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
-
     let mut lowerdir = String::new();
     for (i, dir) in bento_config.lowerdir.iter().enumerate() {
         assert!(fs::exists(dir).is_ok());
@@ -96,7 +89,6 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
     }
 
     let fstype = Some("overlay");
-    // mount flags
     let flags = MsFlags::empty();
     assert!(fs::exists(&bento_config.upperdir).is_ok());
     assert!(fs::exists(&bento_config.workdir).is_ok());
@@ -111,6 +103,21 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
 
     mount(Some("overlay"), &bento_config.merge, fstype, flags, data)
         .expect("Failed to Mount Filesystem");
+
+    let bind_mount = &bento_config.merge.join("app");
+    assert!(fs::exists(&bento_config.merge).is_ok());
+    if !bind_mount.exists() {
+        fs::create_dir_all(&bind_mount).expect("Failed to create /app");
+    }
+    // Hardcoded until we add user/cli mount options.
+    mount(
+        Some("/home/cquick/Desktop/dev/python-app"),
+        bind_mount,
+        None::<&Path>,
+        MsFlags::MS_BIND,
+        None::<&[u8]>,
+    )
+    .expect("Failed to Mount USER Filesystem");
 }
 
 pub fn get_bento_config_path(name: &str) -> PathBuf {
@@ -140,6 +147,11 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) {
             sethostname(name).expect("Failed to set hostname");
             let (path, args, env) = get_execve_params(bento_config);
 
+            // let path = CString::new("/bin/bash").unwrap();
+            // let arg1 = CString::new("bash").unwrap();
+            // let args = vec![arg1];
+            // let env_var = CString::new("MY_VAR=hello").unwrap();
+            // let env = vec![env_var];
             execve(&path, &args, &env).expect("Failed to replace process image.");
             process::exit(0);
         }
@@ -168,8 +180,8 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
             let env_v = get_executable_paths(&bento_config.env);
             for e in env_v.iter() {
                 if Path::new(e).join(cmd).is_file() {
-                    let p_ath = Path::new(e).join(cmd);
-                    let str = p_ath.to_string_lossy();
+                    // let p_ath = Path::new(e).join(cmd);
+                    // let str = p_ath.to_string_lossy();
                     match PathBuf::from(e).join(cmd).to_str() {
                         Some(p) => {
                             path.push_str(p);
@@ -185,6 +197,8 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
 
 fn unmount_and_clean_up(merge: &PathBuf) {
     //** Unmount the container filesystem **//
+    let app = merge.join("app");
+    umount(&app).expect("Failed to Unmount");
     umount(merge).expect("Failed to Unmount");
 }
 
