@@ -1,5 +1,5 @@
 use nix::mount::{mount, umount};
-use nix::unistd::{execve, getgid, getuid, sethostname};
+use nix::unistd::{execve, sethostname};
 use nix::{
     mount::MsFlags,
     sys::wait::waitpid,
@@ -16,40 +16,6 @@ use std::{env, fs};
 
 use crate::config::{BentoConfigJson, get_bento_config};
 
-fn _print_uid_map_from_pid() {
-    let pid = getpid();
-    let pid = pid.as_raw();
-    let mut path = PathBuf::new(); // Create an empty PathBuf
-    path.push("/proc");
-    path.push(pid.to_string());
-    // path.push("self");
-    path.push("uid_map");
-    println!("proc_dir: {:?}", path);
-    let contents = std::fs::read(path).expect("Failed to read mapping");
-    // Convert the bytes to a string for printing (assuming valid UTF-8)
-    let text = String::from_utf8_lossy(&contents);
-    println!("File contents: {}", text);
-}
-fn _print_gid_map_from_pid() {
-    let pid = getpid();
-    let pid = pid.as_raw();
-    let mut path = PathBuf::new(); // Create an empty PathBuf
-    path.push("/proc");
-    path.push(pid.to_string());
-    // path.push("self");
-    path.push("gid_map");
-    println!("proc_dir: {:?}", path);
-    let contents = std::fs::read(path).expect("Failed to read mapping");
-    // Convert the bytes to a string for printing (assuming valid UTF-8)
-    let text = String::from_utf8_lossy(&contents);
-    println!("File contents: {}", text);
-}
-
-fn _print_mappings() {
-    let host_uid = getuid();
-    let host_gid = getgid();
-    println!("uid {} gid {}", host_uid, host_gid);
-}
 fn write_to_gid_setgroup() {
     let pid = getpid();
     let pid = pid.as_raw();
