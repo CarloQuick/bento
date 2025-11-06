@@ -105,3 +105,25 @@ pub fn get_nested_manifest(
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_hash_to_path() {
+        let result = get_config_path(
+            "sha256:e1bb3adc44d158b8b37d647dbfa5864b74f387552c5f12abe9cc95ae773b7c69",
+        );
+        let config_path = PathBuf::from(
+            "/sha256/e1bb3adc44d158b8b37d647dbfa5864b74f387552c5f12abe9cc95ae773b7c69",
+        );
+        assert_eq!(result, Some(config_path));
+    }
+    #[test]
+    fn no_hash_in_config() {
+        let result =
+            get_config_path("e1bb3adc44d158b8b37d647dbfa5864b74f387552c5f12abe9cc95ae773b7c69");
+        assert_eq!(result, None);
+    }
+}
