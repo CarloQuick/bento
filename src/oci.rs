@@ -116,7 +116,7 @@ mod tests {
             "sha256:e1bb3adc44d158b8b37d647dbfa5864b74f387552c5f12abe9cc95ae773b7c69",
         );
         let config_path = PathBuf::from(
-            "/sha256/e1bb3adc44d158b8b37d647dbfa5864b74f387552c5f12abe9cc95ae773b7c69",
+            "blobs/sha256/e1bb3adc44d158b8b37d647dbfa5864b74f387552c5f12abe9cc95ae773b7c69",
         );
         assert_eq!(result, Some(config_path));
     }
