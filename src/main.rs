@@ -17,6 +17,8 @@ fn main() {
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Create { name, image }) => {
+            let image = &hyphen_for_colon(image);
+            let name = &hyphen_for_colon(name);
             let bento_images_env: String =
                 env::var("BENTO_IMAGES_PATH").expect("Failed to get images path from .env");
 
@@ -71,5 +73,23 @@ fn main() {
             }
         }
         None => {}
+    }
+}
+
+pub fn hyphen_for_colon(image: &String) -> String {
+    let str = image.replace(":", "-");
+    str
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remove_image_colon() {
+        let image = String::from("python:trixie");
+        let result = hyphen_for_colon(&image);
+        let new_image = String::from("python-trixie");
+        assert_eq!(result, new_image);
     }
 }
