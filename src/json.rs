@@ -73,7 +73,7 @@ pub fn check_existing_container(name: &str) -> Option<Container> {
     }
 }
 
-pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) {
+pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<()> {
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
     let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
@@ -118,8 +118,9 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) {
         .expect("Failed to open File with Options");
     let buf = to_string_pretty(&result).expect("Failed to create the buf from the result map");
     file.write_all(buf.as_bytes())
-        .expect("Failed to write the buf as bytes");
-    println!("After checking {:?}", result);
+        .expect("Failed to write container config");
+
+    Ok(())
 }
 
 pub fn read_all_container_manifest() -> HashMap<String, Container> {

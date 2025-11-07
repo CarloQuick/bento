@@ -1,6 +1,5 @@
 use crate::extract;
 use crate::oci::OciImageConfig;
-use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use serde_json::{Result, to_writer_pretty};
 use std::fs::{File, create_dir};
@@ -128,7 +127,7 @@ pub fn write_bento_config<P: AsRef<Path>>(write_path: P, bento: &BentoConfigJson
     let mut writer = BufWriter::new(file);
     to_writer_pretty(&mut writer, &bento).unwrap();
     writer.flush().expect("Failed to flush the writer");
-    eprint!("{}\n", "🎉 Bento finished 🎉".cyan());
+
     Ok(())
 }
 
