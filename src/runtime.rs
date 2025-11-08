@@ -201,27 +201,37 @@ pub fn get_path_index(env: &Vec<String>) -> usize {
     panic!("Failed to find PATH in config");
 }
 
+pub fn format_create_params(name: &String, image: &String) -> (String, String) {
+    let image = hyphen_for_colon(image);
+    let name = hyphen_for_colon(name);
+    (image, name)
+}
+
 pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
-    let image = &hyphen_for_colon(image);
-    let name = &hyphen_for_colon(name);
+    let (image, name) = &format_create_params(name, image);
+
+    // Build env vars
     let bento_images_env: String =
         env::var("BENTO_IMAGES_PATH").expect("Failed to get images path from .env");
 
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
 
-    let mut tar = String::from(image);
-    tar.push_str(".tar");
-
     let bento_image_path = PathBuf::from(&bento_images_env).join(image);
-    let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
     let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-
     fs::create_dir_all(&bento_image_path).expect("Failed to create image dir");
     fs::create_dir_all(&bento_container_path).expect("Failed to create container dir");
+
+    let mut tar = String::from(image);
+    tar.push_str(".tar");
+    let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
     extract::unpack_archive(&image_tar_path, &bento_image_path);
+
+    // Creating the bento container config
     let (container_name, created_container_path) =
-        json::create(name, &bento_image_path, &bento_container_path);
+        json::create_bento_config(name, &bento_image_path, &bento_container_path);
+
+    // Adding the container to the container manifest
     let manifest_result =
         json::add_to_container_manifest(&container_name, &created_container_path, 0);
     let result = match manifest_result {
