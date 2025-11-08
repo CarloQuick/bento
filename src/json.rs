@@ -73,6 +73,11 @@ pub fn check_existing_container(name: &str) -> Option<Container> {
     }
 }
 
+pub fn print_named_container_state(name: &str, state: &State) {
+    eprintln!("{}", name);
+    eprintln!("==> {:?}", state);
+}
+
 pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<()> {
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
@@ -123,7 +128,7 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<
     Ok(())
 }
 
-pub fn read_all_container_manifest() -> HashMap<String, Container> {
+pub fn list_container_manifest() {
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
     let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
@@ -144,7 +149,14 @@ pub fn read_all_container_manifest() -> HashMap<String, Container> {
     } else {
         serde_json::from_str(&json_contents).expect("Failed to read json")
     };
-    result
+    if result.is_empty() {
+        eprintln!("No containers available.");
+    } else {
+        for (k, v) in result.iter() {
+            eprintln!("{}", k);
+            eprintln!("==> {:?}", v.state)
+        }
+    }
 }
 
 #[cfg(target_arch = "x86")]
