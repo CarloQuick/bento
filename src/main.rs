@@ -30,17 +30,12 @@ fn main() {
         }
         Some(Commands::Status { name, all }) => {
             if *all {
-                let map = json::read_all_container_manifest();
-                for (k, v) in map.iter() {
-                    eprintln!("{}", k);
-                    eprintln!("==> {:?}", v.state)
-                }
+                json::list_container_manifest();
             } else {
                 match name {
                     Some(n) => match json::check_existing_container(n) {
                         Some(container) => {
-                            eprintln!("{}", n);
-                            eprintln!("==> {:?}", container.state);
+                            json::print_named_container_state(n, &container.state);
                         }
                         None => {
                             eprintln!("Sorry, {} is not an existing Bento container.", n);
