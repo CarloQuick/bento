@@ -176,7 +176,7 @@ pub fn return_cpu_architecture() -> String {
     String::from("aarch64")
 }
 
-pub fn create(
+pub fn create_bento_config(
     container_name: &String,
     bento_image_path: &PathBuf,
     bento_container_path: &PathBuf,

@@ -10,10 +10,11 @@ use nix::{
     unistd::getpid,
 };
 use std::ffi::CString;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process;
 use std::{env, fs};
-
+// use std::io::{Error, ErrorKind};
 use crate::config::{BentoConfigJson, get_bento_config};
 use crate::{extract, json};
 
@@ -186,6 +187,31 @@ pub fn start(name: &str) {
     unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
+pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
+    let (image, name) = &format_create_params(name, image);
+    let (bento_images_env, bento_containers_env) = &get_bento_envs();
+
+    let (new_bento_image_path, new_bento_container_path) =
+        &create_container_dirs(bento_images_env, bento_containers_env, name, image);
+
+    if let Err(e) = unpack_image(image, bento_images_env, new_bento_image_path) {
+        rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
+        panic!("Error: {}. unpacking image.", e)
+    }
+    let (container_name, created_container_path) =
+        json::create_bento_config(name, &new_bento_image_path, &new_bento_container_path);
+
+    //TODO: Remove hardcoded pid in future
+    let manifest_result =
+        json::add_to_container_manifest(&container_name, &created_container_path, 0);
+
+    let result = match manifest_result {
+        Ok(_) => Ok(()),
+        Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
+    };
+    result
+}
+
 pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {
     let index = get_path_index(env);
     let v: Vec<&str> = env[index].split(":").collect();
@@ -201,34 +227,72 @@ pub fn get_path_index(env: &Vec<String>) -> usize {
     panic!("Failed to find PATH in config");
 }
 
-pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
-    let image = &hyphen_for_colon(image);
-    let name = &hyphen_for_colon(name);
+fn format_create_params(name: &String, image: &String) -> (String, String) {
+    let image = hyphen_for_colon(image);
+    let name = hyphen_for_colon(name);
+    (image, name)
+}
+pub fn get_bento_envs() -> (String, String) {
     let bento_images_env: String =
         env::var("BENTO_IMAGES_PATH").expect("Failed to get images path from .env");
 
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
 
+    (bento_images_env, bento_containers_env)
+}
+
+fn create_container_dirs(
+    bento_images_env: &String,
+    bento_containers_env: &String,
+    name: &String,
+    image: &String,
+) -> (PathBuf, PathBuf) {
+    let new_bento_image_path = PathBuf::from(&bento_images_env).join(image);
+    let new_bento_container_path = PathBuf::from(&bento_containers_env).join(name);
+    if let Err(create_error) = fs::create_dir_all(&new_bento_image_path) {
+        if create_error.kind() == ErrorKind::AlreadyExists {
+            panic!("File already exists at: {:?}", new_bento_image_path);
+        } else {
+            println!("Rolling back bento_image dirs");
+            rollback_dirs(vec![&new_bento_image_path]);
+        }
+        panic!("Error: {}", create_error);
+    } else {
+        if let Err(create_error) = fs::create_dir_all(&new_bento_container_path) {
+            if create_error.kind() == ErrorKind::AlreadyExists {
+                panic!("File already exists at: {:?}", new_bento_container_path);
+            } else {
+                println!("Rolling back bento_image dirs");
+                rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]);
+            }
+
+            panic!("Error: {}", create_error);
+        }
+    }
+    (new_bento_image_path, new_bento_container_path)
+}
+
+fn rollback_dirs(dirs: Vec<&PathBuf>) {
+    for dir in dirs.iter() {
+        if let Err(remove_error) = fs::remove_dir(dir) {
+            eprintln!("Error: {}. removing failed Image directory", remove_error)
+        } else {
+            eprintln!("Removed {:?} after failed execution.", dir);
+        }
+    }
+}
+
+fn unpack_image(
+    image: &String,
+    bento_images_env: &String,
+    bento_image_path: &PathBuf,
+) -> Result<(), std::io::Error> {
     let mut tar = String::from(image);
     tar.push_str(".tar");
-
-    let bento_image_path = PathBuf::from(&bento_images_env).join(image);
     let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
-    let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-
-    fs::create_dir_all(&bento_image_path).expect("Failed to create image dir");
-    fs::create_dir_all(&bento_container_path).expect("Failed to create container dir");
-    extract::unpack_archive(&image_tar_path, &bento_image_path);
-    let (container_name, created_container_path) =
-        json::create(name, &bento_image_path, &bento_container_path);
-    let manifest_result =
-        json::add_to_container_manifest(&container_name, &created_container_path, 0);
-    let result = match manifest_result {
-        Ok(_) => Ok(()),
-        Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
-    };
-    result
+    let res = extract::unpack_archive(&image_tar_path, &bento_image_path);
+    res
 }
 
 pub fn hyphen_for_colon(image: &String) -> String {
