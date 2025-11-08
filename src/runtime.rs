@@ -223,29 +223,29 @@ fn create_container_dirs(
     name: &String,
     image: &String,
 ) -> (PathBuf, PathBuf) {
-    let bento_image_path = PathBuf::from(&bento_images_env).join(image);
-    let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-    if let Err(create_error) = fs::create_dir_all(&bento_image_path) {
+    let new_bento_image_path = PathBuf::from(&bento_images_env).join(image);
+    let new_bento_container_path = PathBuf::from(&bento_containers_env).join(name);
+    if let Err(create_error) = fs::create_dir_all(&new_bento_image_path) {
         if create_error.kind() == ErrorKind::AlreadyExists {
-            panic!("File already exists at: {:?}", bento_image_path);
+            panic!("File already exists at: {:?}", new_bento_image_path);
         } else {
             println!("Rolling back bento_image dirs");
-            rollback_dirs(vec![&bento_image_path]);
+            rollback_dirs(vec![&new_bento_image_path]);
         }
         eprintln!("Error: {}", create_error);
     } else {
-        if let Err(create_error) = fs::create_dir_all(&bento_container_path) {
+        if let Err(create_error) = fs::create_dir_all(&new_bento_container_path) {
             if create_error.kind() == ErrorKind::AlreadyExists {
-                panic!("File already exists at: {:?}", bento_container_path);
+                panic!("File already exists at: {:?}", new_bento_container_path);
             } else {
                 println!("Rolling back bento_image dirs");
-                rollback_dirs(vec![&bento_image_path, &bento_container_path]);
+                rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]);
             }
 
             eprintln!("Error: {}", create_error);
         }
     }
-    (bento_image_path, bento_container_path)
+    (new_bento_image_path, new_bento_container_path)
 }
 
 fn rollback_dirs(dirs: Vec<&PathBuf>) {
@@ -274,23 +274,18 @@ pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
     let (image, name) = &format_create_params(name, image);
     let (bento_images_env, bento_containers_env) = &get_bento_envs();
 
-    let (bento_image_path, bento_container_path) =
+    let (new_bento_image_path, new_bento_container_path) =
         &create_container_dirs(bento_images_env, bento_containers_env, name, image);
 
-    // TODO: Future task - Rollback directories | unpacked archives on failure
-    if let Err(e) = unpack_image(image, bento_images_env, bento_image_path) {
-        rollback_dirs(vec![
-            bento_image_path,
-            bento_container_path,
-            bento_image_path,
-        ]);
+    if let Err(e) = unpack_image(image, bento_images_env, new_bento_image_path) {
+        rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
         eprintln!("Error: {}. unpacking image.", e)
     }
 
     // Creating the bento container config
     // TODO: Future task - Rollback directories | unpacked archives | bento_config on failure
     let (container_name, created_container_path) =
-        json::create_bento_config(name, &bento_image_path, &bento_container_path);
+        json::create_bento_config(name, &new_bento_image_path, &new_bento_container_path);
 
     // Adding the container to the container manifest
     // TODO: Future task - Rollback directories | unpacked archives | bento_config | container_manifest on failure
