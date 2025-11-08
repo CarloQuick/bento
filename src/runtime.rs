@@ -187,6 +187,31 @@ pub fn start(name: &str) {
     unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
+pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
+    let (image, name) = &format_create_params(name, image);
+    let (bento_images_env, bento_containers_env) = &get_bento_envs();
+
+    let (new_bento_image_path, new_bento_container_path) =
+        &create_container_dirs(bento_images_env, bento_containers_env, name, image);
+
+    if let Err(e) = unpack_image(image, bento_images_env, new_bento_image_path) {
+        rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
+        panic!("Error: {}. unpacking image.", e)
+    }
+    let (container_name, created_container_path) =
+        json::create_bento_config(name, &new_bento_image_path, &new_bento_container_path);
+
+    //TODO: Remove hardcoded pid in future
+    let manifest_result =
+        json::add_to_container_manifest(&container_name, &created_container_path, 0);
+
+    let result = match manifest_result {
+        Ok(_) => Ok(()),
+        Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
+    };
+    result
+}
+
 pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {
     let index = get_path_index(env);
     let v: Vec<&str> = env[index].split(":").collect();
@@ -232,7 +257,7 @@ fn create_container_dirs(
             println!("Rolling back bento_image dirs");
             rollback_dirs(vec![&new_bento_image_path]);
         }
-        eprintln!("Error: {}", create_error);
+        panic!("Error: {}", create_error);
     } else {
         if let Err(create_error) = fs::create_dir_all(&new_bento_container_path) {
             if create_error.kind() == ErrorKind::AlreadyExists {
@@ -242,7 +267,7 @@ fn create_container_dirs(
                 rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]);
             }
 
-            eprintln!("Error: {}", create_error);
+            panic!("Error: {}", create_error);
         }
     }
     (new_bento_image_path, new_bento_container_path)
@@ -268,34 +293,6 @@ fn unpack_image(
     let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
     let res = extract::unpack_archive(&image_tar_path, &bento_image_path);
     res
-}
-
-pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
-    let (image, name) = &format_create_params(name, image);
-    let (bento_images_env, bento_containers_env) = &get_bento_envs();
-
-    let (new_bento_image_path, new_bento_container_path) =
-        &create_container_dirs(bento_images_env, bento_containers_env, name, image);
-
-    if let Err(e) = unpack_image(image, bento_images_env, new_bento_image_path) {
-        rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
-        eprintln!("Error: {}. unpacking image.", e)
-    }
-
-    // Creating the bento container config
-    // TODO: Future task - Rollback directories | unpacked archives | bento_config on failure
-    let (container_name, created_container_path) =
-        json::create_bento_config(name, &new_bento_image_path, &new_bento_container_path);
-
-    // Adding the container to the container manifest
-    // TODO: Future task - Rollback directories | unpacked archives | bento_config | container_manifest on failure
-    let manifest_result =
-        json::add_to_container_manifest(&container_name, &created_container_path, 0);
-    let result = match manifest_result {
-        Ok(_) => Ok(()),
-        Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
-    };
-    result
 }
 
 pub fn hyphen_for_colon(image: &String) -> String {
