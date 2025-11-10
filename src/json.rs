@@ -180,6 +180,7 @@ pub fn create_bento_config(
     container_name: &String,
     bento_image_path: &PathBuf,
     bento_container_path: &PathBuf,
+    mount: &PathBuf,
 ) -> (String, PathBuf) {
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
@@ -219,6 +220,7 @@ pub fn create_bento_config(
                                     image_layers,
                                     &bento_image_path,
                                     &bento_container_path,
+                                    mount,
                                 )
                                 .expect("Failed to create bento json");
                             }

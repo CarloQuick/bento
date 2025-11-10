@@ -187,7 +187,7 @@ pub fn start(name: &str) {
     unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
-pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
+pub fn create(name: &String, image: &String, mount: &PathBuf) -> Result<(), serde_json::Error> {
     let (image, name) = &format_create_params(name, image);
     let (bento_images_env, bento_containers_env) = &get_bento_envs();
 
@@ -198,8 +198,12 @@ pub fn create(name: &String, image: &String) -> Result<(), serde_json::Error> {
         rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
         panic!("Error: {}. unpacking image.", e)
     }
-    let (container_name, created_container_path) =
-        json::create_bento_config(name, &new_bento_image_path, &new_bento_container_path);
+    let (container_name, created_container_path) = json::create_bento_config(
+        name,
+        &new_bento_image_path,
+        &new_bento_container_path,
+        mount,
+    );
 
     //TODO: Remove hardcoded pid in future
     let manifest_result =

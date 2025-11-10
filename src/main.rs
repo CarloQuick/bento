@@ -1,4 +1,6 @@
 extern crate dotenv;
+use std::path::PathBuf;
+
 use bento::{
     bento_cli::{Cli, Commands},
     json,
@@ -11,8 +13,12 @@ fn main() {
     dotenv().ok();
     let cli = Cli::parse();
     match &cli.command {
-        Some(Commands::Create { name, image }) => {
-            match create(name, image) {
+        Some(Commands::Create { name, image, mount }) => {
+            let mount_dir = match mount {
+                Some(m) => m,
+                None => &PathBuf::new(),
+            };
+            match create(name, image, mount_dir) {
                 Ok(_) => eprintln!("{}\n", "🎉 Bento finished 🎉"),
                 Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
             };

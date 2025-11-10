@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -17,6 +19,10 @@ pub enum Commands {
         /// Name of available image
         #[arg(short, long)]
         image: String,
+
+        /// Location of volume mount
+        #[arg(short, long, value_name = "FILE")]
+        mount: Option<PathBuf>,
     },
     /// Starts a container with the data compiled in "create"
     Start {
