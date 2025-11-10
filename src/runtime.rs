@@ -79,7 +79,7 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
     }
     // Hardcoded until we add user/cli mount options.
     mount(
-        Some("/home/cquick/Desktop/dev/python-app"),
+        Some(&bento_config.mount),
         bind_mount,
         None::<&Path>,
         MsFlags::MS_BIND,
@@ -113,13 +113,13 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) {
             chroot(&bento_config.merge).expect("chroot failed");
             std::env::set_current_dir("/").expect("failed to cd to root");
             sethostname(name).expect("Failed to set hostname");
-            let (path, args, env) = get_execve_params(bento_config);
+            // let (path, args, env) = get_execve_params(bento_config);
 
-            // let path = CString::new("/bin/bash").unwrap();
-            // let arg1 = CString::new("bash").unwrap();
-            // let args = vec![arg1];
-            // let env_var = CString::new("MY_VAR=hello").unwrap();
-            // let env = vec![env_var];
+            let path = CString::new("/bin/bash").unwrap();
+            let arg1 = CString::new("bash").unwrap();
+            let args = vec![arg1];
+            let env_var = CString::new("MY_VAR=hello").unwrap();
+            let env = vec![env_var];
             execve(&path, &args, &env).expect("Failed to replace process image.");
             process::exit(0);
         }
