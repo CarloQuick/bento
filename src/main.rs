@@ -19,7 +19,7 @@ fn main() {
                 None => &PathBuf::new(),
             };
             match create(name, image, mount_dir) {
-                Ok(_) => eprintln!("{}\n", "🎉 Bento finished 🎉"),
+                Ok(_) => eprintln!("🍱 Bento Container {} finished", name),
                 Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
             };
         }

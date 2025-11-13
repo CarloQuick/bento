@@ -3,6 +3,7 @@ use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
 use core::panic;
+use flate2::write;
 use serde_json::Result;
 use std::path::PathBuf;
 extern crate dotenv;
@@ -29,6 +30,18 @@ pub enum State {
     Running,
     Stopped,
 }
+
+impl State {
+    fn print(&self) -> String {
+        match self {
+            State::Created => String::from("created"),
+            State::Creating => String::from("creating"),
+            State::Running => String::from("running"),
+            State::Stopped => String::from("stopped"),
+        }
+    }
+}
+
 fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> {
     let mut image_layers: Vec<String> = Vec::with_capacity(layers.len());
     for (_, val) in layers.iter().enumerate() {
@@ -74,8 +87,9 @@ pub fn check_existing_container(name: &str) -> Option<Container> {
 }
 
 pub fn print_named_container_state(name: &str, state: &State) {
-    eprintln!("{}", name);
-    eprintln!("==> {:?}", state);
+    eprintln!("{:<15} | {:<10}", "Name", "State");
+    eprintln!("----------------|----------");
+    eprintln!("{:<15} | {:<10}", name, state.print());
 }
 
 pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<()> {
@@ -112,7 +126,6 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<
             println!("Updating existing container of the same name: {}", name);
         }
         None => {
-            println!("Adding {} to the containers config", name);
             result.insert(String::from(name), container);
         }
     }
