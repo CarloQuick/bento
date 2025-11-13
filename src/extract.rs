@@ -4,19 +4,11 @@ use std::path::PathBuf;
 use tar::Archive;
 
 pub fn decompress_tarball(path: &str, destination: &str) -> Result<(), std::io::Error> {
-    println!("Opening file: {}", path);
     let tar_gz = File::open(path).unwrap();
-
-    println!("Creating GzDecoder");
     let tar = GzDecoder::new(tar_gz);
-
-    println!("Creating Archive");
     let mut archive = Archive::new(tar);
-
-    println!("Unpacking to: {}", destination);
     archive.unpack(destination).unwrap();
 
-    println!("Unpack complete");
     Ok(())
 }
 pub fn unpack_archive(source: &PathBuf, dest: &PathBuf) -> Result<(), std::io::Error> {
