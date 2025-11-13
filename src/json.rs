@@ -3,7 +3,6 @@ use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
 use core::panic;
-use flate2::write;
 use serde_json::Result;
 use std::path::PathBuf;
 extern crate dotenv;
