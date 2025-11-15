@@ -21,6 +21,7 @@ pub struct BentoConfigJson {
     pub workdir: PathBuf,
     pub merge: PathBuf,
     pub mount: PathBuf,
+    pub cwd: PathBuf,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ImageLayers {
@@ -39,6 +40,7 @@ impl BentoConfigJson {
         workdir: &PathBuf,
         merge: &PathBuf,
         mount: &PathBuf,
+        cwd: &PathBuf,
     ) -> BentoConfigJson {
         BentoConfigJson {
             name: name.clone(),
@@ -53,6 +55,7 @@ impl BentoConfigJson {
             workdir: workdir.clone(),
             merge: merge.clone(),
             mount: mount.clone(),
+            cwd: cwd.clone(),
         }
     }
 }
@@ -64,6 +67,7 @@ pub fn create_bento_json<P: AsRef<Path>>(
     image_path: &PathBuf,
     container_path: &PathBuf,
     mount: &PathBuf,
+    cwd: &PathBuf,
 ) -> Result<BentoConfigJson> {
     // Open the file in read-only mode with buffer.
     let read_file =
@@ -109,6 +113,7 @@ pub fn create_bento_json<P: AsRef<Path>>(
         &workdir,
         &merge,
         mount,
+        cwd,
     );
     write_bento_config(write_path, &bento_config)?;
 

@@ -111,7 +111,7 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) {
         Ok(ForkResult::Child) => {
             //** In the child: chroot into the prepared directory **//
             chroot(&bento_config.merge).expect("chroot failed");
-            std::env::set_current_dir("/").expect("failed to cd to root");
+            std::env::set_current_dir(&bento_config.cwd).expect("failed to cd to root");
             sethostname(name).expect("Failed to set hostname");
             // let (path, args, env) = get_execve_params(bento_config);
 
@@ -129,7 +129,7 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) {
     }
 }
 
-fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
+fn _get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
     let mut args: Vec<CString> = Vec::new();
     let mut env: Vec<CString> = Vec::new();
     for arg in bento_config.cmd.iter() {
@@ -187,7 +187,12 @@ pub fn start(name: &str) {
     unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
-pub fn create(name: &String, image: &String, mount: &PathBuf) -> Result<(), serde_json::Error> {
+pub fn create(
+    name: &String,
+    image: &String,
+    mount: &PathBuf,
+    cwd: &PathBuf,
+) -> Result<(), serde_json::Error> {
     let (image, name) = &format_create_params(name, image);
     let (bento_images_env, bento_containers_env) = &get_bento_envs();
 
@@ -203,9 +208,9 @@ pub fn create(name: &String, image: &String, mount: &PathBuf) -> Result<(), serd
         &new_bento_image_path,
         &new_bento_container_path,
         mount,
+        cwd,
     );
 
-    //TODO: Remove hardcoded pid in future
     let manifest_result =
         json::add_to_container_manifest(&container_name, &created_container_path, 0);
 

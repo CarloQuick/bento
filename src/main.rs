@@ -13,12 +13,17 @@ fn main() {
     dotenv().ok();
     let cli = Cli::parse();
     match &cli.command {
-        Some(Commands::Create { name, image, mount }) => {
+        Some(Commands::Create {
+            name,
+            image,
+            mount,
+            cwd,
+        }) => {
             let mount_dir = match mount {
                 Some(m) => m,
                 None => &PathBuf::new(),
             };
-            match create(name, image, mount_dir) {
+            match create(name, image, mount_dir, cwd) {
                 Ok(_) => eprintln!("🍱 Bento Container {} finished", name),
                 Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
             };
