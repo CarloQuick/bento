@@ -23,6 +23,10 @@ pub enum Commands {
         /// Location of volume mount
         #[arg(short, long, value_name = "FILE")]
         mount: Option<PathBuf>,
+
+        /// Absolute path for container's working directory
+        #[arg(long, value_name = "FILE")]
+        cwd: PathBuf,
     },
     /// Starts a container with the data compiled in "create"
     Start {
