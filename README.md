@@ -1,55 +1,66 @@
-# Bento Container Runtime
+# Bento 🍱
 
-A minimal container runtime built from scratch in Rust, implementing Linux namespaces and overlay filesystems for process isolation.
+A container runtime built from scratch in Rust to learn systems programming fundamentals.
 
-## Current Features
+## What is this?
 
-- **Process Isolation**: Creates isolated containers using PID and UTS namespaces
-- **Custom Hostnames**: Support for named containers with `--name` flag
-- **Overlay Filesystem**: Implements container layering using overlay mounts
-- **Clean Lifecycle**: Proper container startup and shutdown
+Bento is an educational container runtime that implements core container isolation mechanisms found in production runtimes like Docker, containerd, and youki. This project exists to deeply understand how containers actually work under the hood.
 
-## Usage
+## What it does
 
-```bash
-# Build the project
-cargo build
+- Parses OCI-compliant container images
+- Creates isolated container environments using Linux namespaces
+- Implements overlay filesystem for copy-on-write functionality
+- Manages container lifecycle (create, start, stop)
+- Provides process isolation and filesystem isolation
 
-# Create and run a container
-sudo ./target/debug/bento create
+## Technical implementation
 
-# Create a named container
-sudo ./target/debug/bento create --name=my-container
-```
+**Isolation mechanisms:**
+- User namespaces (rootless container execution)
+- PID namespaces (isolated process trees)
+- Mount namespaces (isolated filesystem)
+- UTS namespaces (isolated hostname)
 
-## Requirements
+**Filesystem handling:**
+- OCI image format parsing (index.json, manifest.json, config.json)
+- Layer extraction and overlay filesystem mounting
+- Container-specific upperdir/workdir/merge directories
 
-- Linux system with namespace support
-- Root privileges (sudo) for namespace operations
-- Rust toolchain for building
+**Current functionality:**
+- `create`: Parse OCI image, extract layers, configure container filesystem
+- `start`: Fork process into isolated namespaces, mount overlay filesystem, execute container command
+- `status`: Check container state
 
-## Architecture
+## Why Bento?
 
-Bento implements containerization through:
+Container runtimes sit at the intersection of operating systems, filesystems, and process management. Building one requires understanding:
+- Linux syscalls and kernel interfaces
+- Filesystem layering and mount mechanics
+- Process forking and namespace isolation
+- OCI image specifications
+- Systems-level error handling in Rust
 
-- **Linux Namespaces**: PID and UTS isolation for process separation
-- **Overlay Filesystems**: Layered filesystem implementation for container images
-- **Process Management**: Direct process execution and lifecycle handling
+This is a learning project focused on depth over features.
 
-## Development Status
+## Current status
 
-This is an early-stage learning project implementing core container runtime concepts. Currently supports basic container creation and execution with namespace isolation.
+**Experimental** - This runtime is not production-ready and should not be used in production environments. It exists purely for educational purposes and to demonstrate understanding of container internals.
 
-### Current Limitations
+## Built with
 
-- **Manual Base Image**: Requires a pre-extracted Ubuntu image on the filesystem as the overlay lower layer. Future implementation will handle image downloading and extraction automatically.
+- Rust
+- Linux namespaces (via `nix` crate)
+- OCI image format specifications
 
-- **No Proc Mount**: Proc not yet mounted. For example `ps aux` currently is not supported in the container.
+## Learning resources
 
-## Building
+This project was built by working through:
+- OCI Runtime Specification
+- Linux namespaces and cgroups documentation
+- Production runtime codebases (youki, runc)
+- The Rust Programming Language book
 
-```bash
-git clone https://github.com/CarloQuick/bento.git
-cd bento
-cargo build
-```
+---
+
+*Bento: containers compartmentalized like a bento box*
