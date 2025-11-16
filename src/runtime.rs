@@ -211,8 +211,7 @@ pub fn create(
         cwd,
     );
 
-    let manifest_result =
-        json::add_to_container_manifest(&container_name, &created_container_path, 0);
+    let manifest_result = json::add_to_container_manifest(&container_name, &created_container_path);
 
     let result = match manifest_result {
         Ok(_) => Ok(()),

@@ -20,7 +20,7 @@ use std::{
 pub struct Container {
     dir: String,
     pub state: State,
-    pid: u32,
+    pid: Option<u32>,
 }
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum State {
@@ -91,7 +91,7 @@ pub fn print_named_container_state(name: &str, state: &State) {
     eprintln!("{:<15} | {:<10}", name, state.print());
 }
 
-pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<()> {
+pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
     let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
@@ -99,7 +99,7 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<
     let container = Container {
         dir: String::from(dir.to_string_lossy()),
         state: State::Created,
-        pid: pid,
+        pid: None,
     };
     let mut file = OpenOptions::new()
         .read(true)
