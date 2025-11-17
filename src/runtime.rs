@@ -115,17 +115,18 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
         }
         Ok(ForkResult::Child) => {
             //** In the child: chroot into the prepared directory **//
-            chroot(&bento_config.merge)?;
-            std::env::set_current_dir(&bento_config.cwd)?;
-            sethostname(name)?;
+            chroot(&bento_config.merge).expect("Failed to chroot");
+            std::env::set_current_dir(&bento_config.cwd)
+                .expect("Failed to set the container working directory");
+            sethostname(name).expect("Failed to set the hostname");
             // let (path, args, env) = get_execve_params(bento_config);
 
-            let path = CString::new("/bin/bash")?;
-            let arg1 = CString::new("bash")?;
+            let path = CString::new("/bin/bash").expect("Not a valid path");
+            let arg1 = CString::new("bash").expect("Not a valid argument");
             let args = vec![arg1];
-            let env_var = CString::new("MY_VAR=hello")?;
+            let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
             let env = vec![env_var];
-            execve(&path, &args, &env)?;
+            execve(&path, &args, &env).expect("Failed to execute exec function in container");
             process::exit(0);
         }
         Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
