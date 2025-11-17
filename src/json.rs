@@ -3,10 +3,12 @@ use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
 use core::panic;
-use serde_json::Result;
+use std::fs::File;
+use std::io::Seek;
 use std::path::PathBuf;
 extern crate dotenv;
 
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
 use std::{
@@ -116,13 +118,12 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
-    file.read_to_string(&mut json_contents)
-        .expect("Failed to read contents to string");
+    file.read_to_string(&mut json_contents)?;
 
     let mut result: HashMap<String, Container> = if json_contents.is_empty() {
         HashMap::new() // Empty file? Start with empty HashMap
     } else {
-        serde_json::from_str(&json_contents).expect("Failed to read json")
+        serde_json::from_str(&json_contents)?
     };
 
     let existing_container = result.get(name);
@@ -138,16 +139,28 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&bento_container_path)
-        .expect("Failed to open File with Options");
-    let buf = to_string_pretty(&result).expect("Failed to create the buf from the result map");
-    file.write_all(buf.as_bytes())
-        .expect("Failed to write container config");
+        .open(&bento_container_path)?;
+    let buf = to_string_pretty(&result)?;
+    file.write_all(buf.as_bytes())?;
 
     Ok(())
 }
 
-pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) {
+pub fn get_map_from_json(mut file: &File) -> Result<HashMap<String, Container>> {
+    let mut json_contents = String::new();
+    file.read_to_string(&mut json_contents)?;
+
+    // Read the resulting json as a HashMap
+    let result: HashMap<String, Container> = if json_contents.is_empty() {
+        HashMap::new() // Empty file? Start with empty HashMap
+    } else {
+        serde_json::from_str(&json_contents)?
+    };
+
+    Ok(result)
+}
+
+pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) -> Result<()> {
     let bento_container_path = get_container_manifest_path();
 
     // Open the container manifest with options
@@ -155,42 +168,25 @@ pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) {
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
-        .expect("Failed to open File with Options");
-    // Get the json contents
-    let mut json_contents = String::new();
-    file.read_to_string(&mut json_contents)
-        .expect("Failed to read contents to string");
+        .open(&bento_container_path)?;
 
-    // Read the resulting json as a HashMap
-    let mut result: HashMap<String, Container> = if json_contents.is_empty() {
-        HashMap::new() // Empty file? Start with empty HashMap
-    } else {
-        serde_json::from_str(&json_contents).expect("Failed to read json")
-    };
+    let mut result = get_map_from_json(&file)?;
 
-    result
-        .entry(name.to_string())
-        .and_modify(|container: &mut Container| container.state = new_state)
-        .and_modify(|container: &mut Container| container.pid = pid);
-
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(&bento_container_path)
-        .expect("Failed to open File with Options");
-    let buf = to_string_pretty(&result).expect("Failed to create the buf from the result map");
-    file.write_all(buf.as_bytes())
-        .expect("Failed to write container config");
-    // key: name, value: Container
-    let existing_container = result.get(name);
-
-    match existing_container {
-        Some(_c) => {}
-        None => {
-            panic!("Container not present in the Container Manifest");
+    match result.get_mut(name) {
+        Some(container) => {
+            container.state = new_state;
+            container.pid = pid;
         }
+        None => return Err(anyhow!("Input must be at least 5 characters long")),
     }
+
+    file.rewind()?;
+    file.set_len(0)?;
+
+    let buf = to_string_pretty(&result)?;
+    file.write_all(buf.as_bytes())?;
+
+    Ok(())
 }
 
 pub fn list_container_manifest() {
