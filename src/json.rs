@@ -20,7 +20,7 @@ use std::{
 pub struct Container {
     dir: String,
     pub state: State,
-    pid: Option<u32>,
+    pid: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -145,7 +145,7 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn update_container_status(name: &str, pid: Option<u32>, new_state: State) {
+pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) {
     let bento_container_path = get_container_manifest_path();
 
     // Open the container manifest with options
@@ -169,7 +169,8 @@ pub fn update_container_status(name: &str, pid: Option<u32>, new_state: State) {
 
     result
         .entry(name.to_string())
-        .and_modify(|container: &mut Container| container.state = new_state);
+        .and_modify(|container: &mut Container| container.state = new_state)
+        .and_modify(|container: &mut Container| container.pid = pid);
 
     let mut file = OpenOptions::new()
         .write(true)

@@ -106,7 +106,11 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) {
     //** Fork into the namespace **//
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child, .. }) => {
+            let pid = getpid();
+            let pid = pid.as_raw();
+            json::update_container_status(name, Some(pid), json::State::Running);
             waitpid(child, None).expect("Unable to wait for pid change");
+            json::update_container_status(name, None, json::State::Stopped);
         }
         Ok(ForkResult::Child) => {
             //** In the child: chroot into the prepared directory **//
