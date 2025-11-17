@@ -177,7 +177,7 @@ pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) -
             container.state = new_state;
             container.pid = pid;
         }
-        None => return Err(anyhow!("Input must be at least 5 characters long")),
+        None => return Err(anyhow!("Container not found to update.")),
     }
 
     file.rewind()?;
