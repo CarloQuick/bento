@@ -3,10 +3,12 @@ use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
 use core::panic;
-use serde_json::Result;
+use std::fs::File;
+use std::io::Seek;
 use std::path::PathBuf;
 extern crate dotenv;
 
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
 use std::{
@@ -20,8 +22,9 @@ use std::{
 pub struct Container {
     dir: String,
     pub state: State,
-    pid: u32,
+    pub pid: Option<i32>,
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum State {
     Creating,
@@ -85,21 +88,27 @@ pub fn check_existing_container(name: &str) -> Option<Container> {
     }
 }
 
-pub fn print_named_container_state(name: &str, state: &State) {
-    eprintln!("{:<15} | {:<10}", "Name", "State");
-    eprintln!("----------------|----------");
-    eprintln!("{:<15} | {:<10}", name, state.print());
+pub fn print_named_container_state(name: &str, state: &State, pid: Option<i32>) {
+    let pid_str = pid.map_or("N/A".to_string(), |pid| pid.to_string());
+
+    eprintln!("{:<15} | {:<10} | {:<10}", "Name", "State", "PID");
+    eprintln!("----------------+------------+------------");
+    eprintln!("{:<15} | {:<10} | {:<10}", name, state.print(), pid_str);
 }
 
-pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<()> {
+pub fn get_container_manifest_path() -> PathBuf {
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
     let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
+    bento_container_path
+}
 
+pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
+    let bento_container_path = get_container_manifest_path();
     let container = Container {
         dir: String::from(dir.to_string_lossy()),
         state: State::Created,
-        pid: pid,
+        pid: None,
     };
     let mut file = OpenOptions::new()
         .read(true)
@@ -109,13 +118,12 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
-    file.read_to_string(&mut json_contents)
-        .expect("Failed to read contents to string");
+    file.read_to_string(&mut json_contents)?;
 
     let mut result: HashMap<String, Container> = if json_contents.is_empty() {
         HashMap::new() // Empty file? Start with empty HashMap
     } else {
-        serde_json::from_str(&json_contents).expect("Failed to read json")
+        serde_json::from_str(&json_contents)?
     };
 
     let existing_container = result.get(name);
@@ -131,11 +139,52 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf, pid: u32) -> Result<
     let mut file = OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&bento_container_path)
-        .expect("Failed to open File with Options");
-    let buf = to_string_pretty(&result).expect("Failed to create the buf from the result map");
-    file.write_all(buf.as_bytes())
-        .expect("Failed to write container config");
+        .open(&bento_container_path)?;
+    let buf = to_string_pretty(&result)?;
+    file.write_all(buf.as_bytes())?;
+
+    Ok(())
+}
+
+pub fn get_map_from_json(mut file: &File) -> Result<HashMap<String, Container>> {
+    let mut json_contents = String::new();
+    file.read_to_string(&mut json_contents)?;
+
+    // Read the resulting json as a HashMap
+    let result: HashMap<String, Container> = if json_contents.is_empty() {
+        HashMap::new() // Empty file? Start with empty HashMap
+    } else {
+        serde_json::from_str(&json_contents)?
+    };
+
+    Ok(result)
+}
+
+pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) -> Result<()> {
+    let bento_container_path = get_container_manifest_path();
+
+    // Open the container manifest with options
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true) // Create the file if it doesn't exist
+        .open(&bento_container_path)?;
+
+    let mut result = get_map_from_json(&file)?;
+
+    match result.get_mut(name) {
+        Some(container) => {
+            container.state = new_state;
+            container.pid = pid;
+        }
+        None => return Err(anyhow!("Container not found to update.")),
+    }
+
+    file.rewind()?;
+    file.set_len(0)?;
+
+    let buf = to_string_pretty(&result)?;
+    file.write_all(buf.as_bytes())?;
 
     Ok(())
 }

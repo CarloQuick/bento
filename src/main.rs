@@ -46,7 +46,7 @@ fn main() {
                 match name {
                     Some(n) => match json::check_existing_container(n) {
                         Some(container) => {
-                            json::print_named_container_state(n, &container.state);
+                            json::print_named_container_state(n, &container.state, container.pid);
                         }
                         None => {
                             eprintln!("Sorry, {} is not an existing Bento container.", n);

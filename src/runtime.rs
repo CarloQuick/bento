@@ -17,6 +17,7 @@ use std::{env, fs};
 // use std::io::{Error, ErrorKind};
 use crate::config::{BentoConfigJson, get_bento_config};
 use crate::{extract, json};
+use anyhow::{Result, anyhow};
 
 fn write_to_gid_setgroup() {
     let pid = getpid();
@@ -102,30 +103,33 @@ fn unshare_pid_and_uts_namespace() {
     //** UTS namespace **//
     unshare(CloneFlags::CLONE_NEWUTS).expect("Failed to create uts namespace");
 }
-fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) {
+fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()> {
     //** Fork into the namespace **//
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child, .. }) => {
-            waitpid(child, None).expect("Unable to wait for pid change");
+            let pid = child.as_raw();
+            json::update_container_status(name, Some(pid), json::State::Running)?;
+            waitpid(child, None)?;
+            json::update_container_status(name, None, json::State::Stopped)?;
+            Ok(())
         }
         Ok(ForkResult::Child) => {
             //** In the child: chroot into the prepared directory **//
-            chroot(&bento_config.merge).expect("chroot failed");
-            std::env::set_current_dir(&bento_config.cwd).expect("failed to cd to root");
-            sethostname(name).expect("Failed to set hostname");
+            chroot(&bento_config.merge).expect("Failed to chroot");
+            std::env::set_current_dir(&bento_config.cwd)
+                .expect("Failed to set the container working directory");
+            sethostname(name).expect("Failed to set the hostname");
             // let (path, args, env) = get_execve_params(bento_config);
 
-            let path = CString::new("/bin/bash").unwrap();
-            let arg1 = CString::new("bash").unwrap();
+            let path = CString::new("/bin/bash").expect("Not a valid path");
+            let arg1 = CString::new("bash").expect("Not a valid argument");
             let args = vec![arg1];
-            let env_var = CString::new("MY_VAR=hello").unwrap();
+            let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
             let env = vec![env_var];
-            execve(&path, &args, &env).expect("Failed to replace process image.");
+            execve(&path, &args, &env).expect("Failed to execute exec function in container");
             process::exit(0);
         }
-        Err(e) => {
-            println!("❌ Fork failed: {}", e);
-        }
+        Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
     }
 }
 
@@ -183,16 +187,13 @@ pub fn start(name: &str) {
     unshare_mount_namespace(); // Isolate filesystem
     mount_fs_overlay(&bento_config); // Set up container root
     unshare_pid_and_uts_namespace(); // Isolate processes
-    fork_into_namespaces(&bento_config, name); // Run container
+    if let Err(e) = fork_into_namespaces(&bento_config, name) {
+        eprint!("Start failed: {}", e) // Clean exit
+    }
     unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
-pub fn create(
-    name: &String,
-    image: &String,
-    mount: &PathBuf,
-    cwd: &PathBuf,
-) -> Result<(), serde_json::Error> {
+pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> Result<()> {
     let (image, name) = &format_create_params(name, image);
     let (bento_images_env, bento_containers_env) = &get_bento_envs();
 
@@ -211,14 +212,8 @@ pub fn create(
         cwd,
     );
 
-    let manifest_result =
-        json::add_to_container_manifest(&container_name, &created_container_path, 0);
-
-    let result = match manifest_result {
-        Ok(_) => Ok(()),
-        Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
-    };
-    result
+    json::add_to_container_manifest(&container_name, &created_container_path)?;
+    Ok(())
 }
 
 pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {
