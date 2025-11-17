@@ -20,7 +20,7 @@ use std::{
 pub struct Container {
     dir: String,
     pub state: State,
-    pid: Option<i32>,
+    pub pid: Option<i32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -86,10 +86,12 @@ pub fn check_existing_container(name: &str) -> Option<Container> {
     }
 }
 
-pub fn print_named_container_state(name: &str, state: &State) {
-    eprintln!("{:<15} | {:<10}", "Name", "State");
-    eprintln!("----------------|----------");
-    eprintln!("{:<15} | {:<10}", name, state.print());
+pub fn print_named_container_state(name: &str, state: &State, pid: Option<i32>) {
+    let pid_str = pid.map_or("N/A".to_string(), |pid| pid.to_string());
+
+    eprintln!("{:<15} | {:<10} | {:<10}", "Name", "State", "PID");
+    eprintln!("----------------+------------+------------");
+    eprintln!("{:<15} | {:<10} | {:<10}", name, state.print(), pid_str);
 }
 
 pub fn get_container_manifest_path() -> PathBuf {
