@@ -186,10 +186,9 @@ pub fn start(name: &str) {
     unshare_mount_namespace(); // Isolate filesystem
     mount_fs_overlay(&bento_config); // Set up container root
     unshare_pid_and_uts_namespace(); // Isolate processes
-    match fork_into_namespaces(&bento_config, name) {
-        Ok(_) => {}
-        Err(e) => eprint!("Start failed: {}", e), // Clean exit
-    } // Run container
+    if let Err(e) = fork_into_namespaces(&bento_config, name) {
+        eprint!("Start failed: {}", e) // Clean exit
+    }
     unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
