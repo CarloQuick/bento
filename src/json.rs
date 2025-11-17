@@ -22,6 +22,7 @@ pub struct Container {
     pub state: State,
     pid: Option<u32>,
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum State {
     Creating,
@@ -91,11 +92,15 @@ pub fn print_named_container_state(name: &str, state: &State) {
     eprintln!("{:<15} | {:<10}", name, state.print());
 }
 
-pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
+pub fn get_container_manifest_path() -> PathBuf {
     let bento_containers_env: String =
         env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
     let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
+    bento_container_path
+}
 
+pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
+    let bento_container_path = get_container_manifest_path();
     let container = Container {
         dir: String::from(dir.to_string_lossy()),
         state: State::Created,
@@ -138,6 +143,51 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
         .expect("Failed to write container config");
 
     Ok(())
+}
+
+pub fn update_container_status(name: &str, pid: Option<u32>, new_state: State) {
+    let bento_container_path = get_container_manifest_path();
+
+    // Open the container manifest with options
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true) // Create the file if it doesn't exist
+        .open(&bento_container_path)
+        .expect("Failed to open File with Options");
+    // Get the json contents
+    let mut json_contents = String::new();
+    file.read_to_string(&mut json_contents)
+        .expect("Failed to read contents to string");
+
+    // Read the resulting json as a HashMap
+    let mut result: HashMap<String, Container> = if json_contents.is_empty() {
+        HashMap::new() // Empty file? Start with empty HashMap
+    } else {
+        serde_json::from_str(&json_contents).expect("Failed to read json")
+    };
+
+    result
+        .entry(name.to_string())
+        .and_modify(|container: &mut Container| container.state = new_state);
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&bento_container_path)
+        .expect("Failed to open File with Options");
+    let buf = to_string_pretty(&result).expect("Failed to create the buf from the result map");
+    file.write_all(buf.as_bytes())
+        .expect("Failed to write container config");
+    // key: name, value: Container
+    let existing_container = result.get(name);
+
+    match existing_container {
+        Some(_c) => {}
+        None => {
+            panic!("Container not present in the Container Manifest");
+        }
+    }
 }
 
 pub fn list_container_manifest() {
