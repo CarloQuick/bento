@@ -1,10 +1,7 @@
 use nix::mount::{mount, umount};
-use nix::unistd::{execve, sethostname};
-use nix::{
-    mount::MsFlags,
-    sys::wait::waitpid,
-    unistd::{ForkResult, chroot, fork},
-};
+use nix::sys::wait::waitpid;
+use nix::unistd::{ForkResult, execve, fork, sethostname, setsid};
+use nix::{mount::MsFlags, unistd::chroot};
 use nix::{
     sched::{CloneFlags, unshare},
     unistd::getpid,
@@ -109,23 +106,43 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
         Ok(ForkResult::Parent { child, .. }) => {
             let pid = child.as_raw();
             json::update_container_status(name, Some(pid), json::State::Running)?;
-            waitpid(child, None)?;
-            json::update_container_status(name, None, json::State::Stopped)?;
-            Ok(())
+            return Ok(());
         }
         Ok(ForkResult::Child) => {
+            // Creates need session with the child the session leader.
+            if let Err(e) = setsid() {
+                println!(
+                    "Setsid() failed to make the child process session leader: {}",
+                    e
+                );
+                process::exit(1);
+            }
+            match unsafe { fork() } {
+                Ok(ForkResult::Parent { child, .. }) => {
+                    let grandchild = child;
+                    waitpid(grandchild, None)?;
+                    json::update_container_status(name, None, json::State::Stopped)?;
+
+                    return Ok(());
+                }
+                Ok(ForkResult::Child) => {}
+                Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
+            }
+
+            // Child process continues its work as a daemon
             //** In the child: chroot into the prepared directory **//
             chroot(&bento_config.merge).expect("Failed to chroot");
             std::env::set_current_dir(&bento_config.cwd)
                 .expect("Failed to set the container working directory");
             sethostname(name).expect("Failed to set the hostname");
-            // let (path, args, env) = get_execve_params(bento_config);
+            let (path, args, env) = get_execve_params(bento_config);
 
-            let path = CString::new("/bin/bash").expect("Not a valid path");
-            let arg1 = CString::new("bash").expect("Not a valid argument");
-            let args = vec![arg1];
-            let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
-            let env = vec![env_var];
+            // let path = CString::new("/usr/bin").expect("Not a valid path");
+            // let arg1 = CString::new("python").expect("Not a valid argument");
+            // let arg2 = CString::new("main.py").expect("Not a valid argument");
+            // let args = vec![arg1, arg2];
+            // let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
+            // let env = vec![env_var];
             execve(&path, &args, &env).expect("Failed to execute exec function in container");
             process::exit(0);
         }
@@ -133,7 +150,7 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
     }
 }
 
-fn _get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
+fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
     let mut args: Vec<CString> = Vec::new();
     let mut env: Vec<CString> = Vec::new();
     for arg in bento_config.cmd.iter() {
@@ -167,7 +184,7 @@ fn _get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>,
     (CString::new(path).unwrap(), args, env)
 }
 
-fn unmount_and_clean_up(merge: &PathBuf) {
+fn _unmount_and_clean_up(merge: &PathBuf) {
     //** Unmount the container filesystem **//
     let app = merge.join("app");
     umount(&app).expect("Failed to Unmount");
@@ -190,7 +207,7 @@ pub fn start(name: &str) {
     if let Err(e) = fork_into_namespaces(&bento_config, name) {
         eprint!("Start failed: {}", e) // Clean exit
     }
-    unmount_and_clean_up(&bento_config.merge); // Clean exit
+    // unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
 pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> Result<()> {
