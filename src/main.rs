@@ -56,6 +56,14 @@ fn main() {
                 }
             }
         }
+        Some(Commands::Stop { name }) => match json::check_existing_container(name) {
+            Some(container) => {
+                json::print_named_container_state(name, &container.state, container.pid);
+            }
+            None => {
+                eprintln!("Sorry, {} is not an existing Bento container.", name);
+            }
+        },
         None => {}
     }
 }
