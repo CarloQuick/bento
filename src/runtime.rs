@@ -1,20 +1,24 @@
+use crate::config::{BentoConfigJson, get_bento_config};
+use crate::json::Container;
+use crate::{extract, json};
+use anyhow::{Result, anyhow};
 use nix::mount::{mount, umount};
+use nix::sys::signal::Signal;
+use nix::sys::signal::kill;
 use nix::sys::wait::waitpid;
 use nix::unistd::{ForkResult, execve, fork, sethostname, setsid};
 use nix::{mount::MsFlags, unistd::chroot};
 use nix::{
     sched::{CloneFlags, unshare},
-    unistd::getpid,
+    unistd::{Pid, getpid},
 };
 use std::ffi::CString;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process;
+use std::time::Duration;
 use std::{env, fs};
-// use std::io::{Error, ErrorKind};
-use crate::config::{BentoConfigJson, get_bento_config};
-use crate::{extract, json};
-use anyhow::{Result, anyhow};
+use tokio::time::timeout;
 
 fn write_to_gid_setgroup() {
     let pid = getpid();
@@ -231,6 +235,30 @@ pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> 
 
     json::add_to_container_manifest(&container_name, &created_container_path)?;
     Ok(())
+}
+
+async fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
+    kill(pid, signal)?;
+    Ok(())
+}
+
+pub async fn stop(container: &Container) -> Result<()> {
+    if let Some(c_pid) = container.pid {
+        let pid = Pid::from_raw(c_pid);
+        let result = timeout(Duration::from_secs(10), apply_signal(pid, Signal::SIGTERM));
+
+        if let Err(elapsed_error) = result.await {
+            if let Err(sigkill_error) = apply_signal(pid, Signal::SIGKILL).await {
+                return Err(sigkill_error);
+            } else {
+                return Err(anyhow!(elapsed_error));
+            }
+        } else {
+            return Ok(());
+        }
+    } else {
+        return Err(anyhow!(ErrorKind::NotFound));
+    };
 }
 
 pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {

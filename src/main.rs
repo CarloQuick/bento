@@ -4,12 +4,13 @@ use std::path::PathBuf;
 use bento::{
     bento_cli::{Cli, Commands},
     json,
-    runtime::{create, start},
+    runtime::{create, start, stop},
 };
 use clap::Parser;
 use dotenv::dotenv;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     dotenv().ok();
     let cli = Cli::parse();
     match &cli.command {
@@ -57,9 +58,10 @@ fn main() {
             }
         }
         Some(Commands::Stop { name }) => match json::check_existing_container(name) {
-            Some(container) => {
-                json::print_named_container_state(name, &container.state, container.pid);
-            }
+            Some(container) => match stop(&container).await {
+                Ok(()) => json::print_named_container_state(name, &container.state, container.pid),
+                Err(e) => eprint!("{:?}", e),
+            },
             None => {
                 eprintln!("Sorry, {} is not an existing Bento container.", name);
             }
