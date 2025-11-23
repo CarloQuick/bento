@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use nix::mount::{mount, umount};
 use nix::sys::signal::Signal;
 use nix::sys::signal::kill;
-use nix::sys::wait::waitpid;
+use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
 use nix::unistd::{ForkResult, execve, fork, sethostname, setsid};
 use nix::{mount::MsFlags, unistd::chroot};
 use nix::{
@@ -16,9 +16,7 @@ use std::ffi::CString;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process;
-use std::time::Duration;
 use std::{env, fs};
-use tokio::time::timeout;
 
 fn write_to_gid_setgroup() {
     let pid = getpid();
@@ -123,8 +121,32 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
             }
             match unsafe { fork() } {
                 Ok(ForkResult::Parent { child, .. }) => {
-                    let grandchild = child;
-                    waitpid(grandchild, None)?;
+                    // Some(WaitPidFlag::WNOHANG)
+                    match waitpid(child, None)? {
+                        WaitStatus::Exited(c_pid, status) => {
+                            eprint!(
+                                "[Exited] Pid: {} exited with status code {}.",
+                                c_pid, status
+                            )
+                        }
+                        WaitStatus::Signaled(c_pid, signal, core_dumped) => {
+                            eprint!(
+                                "[Signaled] Pid: {} exited from signal {} and core dumped was {:?}.",
+                                c_pid, signal, core_dumped
+                            )
+                        }
+                        WaitStatus::Stopped(c_pid, signal) => {
+                            eprint!("[Stopped] Pid: {} exited from signal {}.", c_pid, signal)
+                        }
+                        WaitStatus::Continued(c_pid) => {
+                            eprint!("[Continued] Pid: {} continues.", c_pid)
+                        }
+                        WaitStatus::StillAlive => {
+                            eprint!("[StillAlive] Still alive...")
+                        }
+                        WaitStatus::PtraceEvent(_, _, _) => {}
+                        WaitStatus::PtraceSyscall(_) => {}
+                    }
                     json::update_container_status(name, None, json::State::Stopped)?;
 
                     return Ok(());
@@ -237,24 +259,17 @@ pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> 
     Ok(())
 }
 
-async fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
+fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
     kill(pid, signal)?;
     Ok(())
 }
 
-pub async fn stop(container: &Container) -> Result<()> {
+pub fn stop(container: &Container) -> Result<()> {
     if let Some(c_pid) = container.pid {
         let pid = Pid::from_raw(c_pid);
-        let result = timeout(Duration::from_secs(10), apply_signal(pid, Signal::SIGTERM));
-
-        if let Err(elapsed_error) = result.await {
-            if let Err(sigkill_error) = apply_signal(pid, Signal::SIGKILL).await {
-                return Err(sigkill_error);
-            } else {
-                return Err(anyhow!(elapsed_error));
-            }
-        } else {
-            return Ok(());
+        match apply_signal(pid, Signal::SIGTERM) {
+            Ok(()) => return Ok(()),
+            Err(e) => return Err(anyhow!(e)),
         }
     } else {
         return Err(anyhow!(ErrorKind::NotFound));

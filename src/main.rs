@@ -9,8 +9,7 @@ use bento::{
 use clap::Parser;
 use dotenv::dotenv;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     dotenv().ok();
     let cli = Cli::parse();
     match &cli.command {
@@ -58,7 +57,7 @@ async fn main() {
             }
         }
         Some(Commands::Stop { name }) => match json::check_existing_container(name) {
-            Some(container) => match stop(&container).await {
+            Some(container) => match stop(&container) {
                 Ok(()) => json::print_named_container_state(name, &container.state, container.pid),
                 Err(e) => eprint!("{:?}", e),
             },
