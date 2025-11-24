@@ -107,16 +107,14 @@ fn unshare_pid_and_uts_namespace() {
 fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()> {
     //** Fork into the namespace **//
     match unsafe { fork() } {
-        Ok(ForkResult::Parent { child }) => {
-            let pid = child.as_raw();
-            eprint!("[PARENT] pid: {}", pid);
+        Ok(ForkResult::Parent { child: _ }) => {
             return Ok(());
         }
         Ok(ForkResult::Child) => {
             // Creates need session with the child the session leader.
 
             if let Err(e) = setsid() {
-                println!(
+                eprintln!(
                     "Setsid() failed to make the child process session leader: {}",
                     e
                 );
@@ -127,11 +125,11 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
             match unsafe { fork() } {
                 Ok(ForkResult::Parent { child }) => {
                     let child_pid = child.as_raw();
-                    eprint!("[CHILD] pid: {}", child_pid);
                     json::update_container_status(name, Some(child_pid), json::State::Running)?;
 
                     waitpid(child, None)?;
                     json::update_container_status(name, None, json::State::Stopped)?;
+                    unmount_and_clean_up(&bento_config.merge); // Clean exit
 
                     return Ok(());
                 }
@@ -194,7 +192,7 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
     (CString::new(path).unwrap(), args, env)
 }
 
-fn _unmount_and_clean_up(merge: &PathBuf) {
+fn unmount_and_clean_up(merge: &PathBuf) {
     //** Unmount the container filesystem **//
     let app = merge.join("app");
     umount(&app).expect("Failed to Unmount");
@@ -216,7 +214,6 @@ pub fn start(name: &str) {
     if let Err(e) = fork_into_namespaces(&bento_config, name) {
         eprint!("Start failed: {}", e) // Clean exit
     }
-    // unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
 pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> Result<()> {
