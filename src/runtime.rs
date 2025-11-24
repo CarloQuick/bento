@@ -1,20 +1,24 @@
+use crate::config::{BentoConfigJson, get_bento_config};
+use crate::json::{Container, State};
+use crate::{extract, json};
+use anyhow::{Result, anyhow};
 use nix::mount::{mount, umount};
+use nix::sys::signal::Signal;
+use nix::sys::signal::kill;
 use nix::sys::wait::waitpid;
 use nix::unistd::{ForkResult, execve, fork, sethostname, setsid};
 use nix::{mount::MsFlags, unistd::chroot};
 use nix::{
     sched::{CloneFlags, unshare},
-    unistd::getpid,
+    unistd::{Pid, getpid},
 };
 use std::ffi::CString;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process;
+use std::thread;
+use std::time::Duration;
 use std::{env, fs};
-// use std::io::{Error, ErrorKind};
-use crate::config::{BentoConfigJson, get_bento_config};
-use crate::{extract, json};
-use anyhow::{Result, anyhow};
+use std::{process, time};
 
 fn write_to_gid_setgroup() {
     let pid = getpid();
@@ -103,25 +107,29 @@ fn unshare_pid_and_uts_namespace() {
 fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()> {
     //** Fork into the namespace **//
     match unsafe { fork() } {
-        Ok(ForkResult::Parent { child, .. }) => {
-            let pid = child.as_raw();
-            json::update_container_status(name, Some(pid), json::State::Running)?;
+        Ok(ForkResult::Parent { child: _ }) => {
             return Ok(());
         }
         Ok(ForkResult::Child) => {
             // Creates need session with the child the session leader.
+
             if let Err(e) = setsid() {
-                println!(
+                eprintln!(
                     "Setsid() failed to make the child process session leader: {}",
                     e
                 );
                 process::exit(1);
             }
+            unshare_pid_and_uts_namespace(); // Isolate processes
+
             match unsafe { fork() } {
-                Ok(ForkResult::Parent { child, .. }) => {
-                    let grandchild = child;
-                    waitpid(grandchild, None)?;
+                Ok(ForkResult::Parent { child }) => {
+                    let child_pid = child.as_raw();
+                    json::update_container_status(name, Some(child_pid), json::State::Running)?;
+
+                    waitpid(child, None)?;
                     json::update_container_status(name, None, json::State::Stopped)?;
+                    unmount_and_clean_up(&bento_config.merge); // Clean exit
 
                     return Ok(());
                 }
@@ -184,7 +192,7 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
     (CString::new(path).unwrap(), args, env)
 }
 
-fn _unmount_and_clean_up(merge: &PathBuf) {
+fn unmount_and_clean_up(merge: &PathBuf) {
     //** Unmount the container filesystem **//
     let app = merge.join("app");
     umount(&app).expect("Failed to Unmount");
@@ -203,11 +211,9 @@ pub fn start(name: &str) {
     unshare_user_namespace(); // Get privileges
     unshare_mount_namespace(); // Isolate filesystem
     mount_fs_overlay(&bento_config); // Set up container root
-    unshare_pid_and_uts_namespace(); // Isolate processes
     if let Err(e) = fork_into_namespaces(&bento_config, name) {
         eprint!("Start failed: {}", e) // Clean exit
     }
-    // unmount_and_clean_up(&bento_config.merge); // Clean exit
 }
 
 pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> Result<()> {
@@ -231,6 +237,41 @@ pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> 
 
     json::add_to_container_manifest(&container_name, &created_container_path)?;
     Ok(())
+}
+
+fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
+    kill(pid, signal)?;
+    Ok(())
+}
+
+pub fn stop(name: &str, container: &Container) -> Result<()> {
+    if let Some(c_pid) = container.pid {
+        let pid = Pid::from_raw(c_pid);
+        match apply_signal(pid, Signal::SIGTERM) {
+            Ok(()) => {
+                for i in 1..=10 {
+                    if let Some(c) = json::check_existing_container(name) {
+                        match c.state {
+                            State::Stopped => return Ok(()),
+                            _ => {
+                                if i < 10 {
+                                    thread::sleep(time::Duration::from_secs(1));
+                                } else {
+                                    apply_signal(pid, Signal::SIGKILL)?;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(200));
+                return Ok(());
+            }
+            Err(e) => return Err(e),
+        }
+    } else {
+        return Err(anyhow!(ErrorKind::NotFound));
+    };
 }
 
 pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {
