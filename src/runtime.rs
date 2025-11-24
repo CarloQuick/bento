@@ -1,11 +1,11 @@
 use crate::config::{BentoConfigJson, get_bento_config};
-use crate::json::Container;
+use crate::json::{Container, State};
 use crate::{extract, json};
 use anyhow::{Result, anyhow};
 use nix::mount::{mount, umount};
 use nix::sys::signal::Signal;
 use nix::sys::signal::kill;
-use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
+use nix::sys::wait::waitpid;
 use nix::unistd::{ForkResult, execve, fork, sethostname, setsid};
 use nix::{mount::MsFlags, unistd::chroot};
 use nix::{
@@ -15,8 +15,10 @@ use nix::{
 use std::ffi::CString;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::process;
+use std::thread;
+use std::time::Duration;
 use std::{env, fs};
+use std::{process, time};
 
 fn write_to_gid_setgroup() {
     let pid = getpid();
@@ -105,13 +107,14 @@ fn unshare_pid_and_uts_namespace() {
 fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()> {
     //** Fork into the namespace **//
     match unsafe { fork() } {
-        Ok(ForkResult::Parent { child, .. }) => {
+        Ok(ForkResult::Parent { child }) => {
             let pid = child.as_raw();
-            json::update_container_status(name, Some(pid), json::State::Running)?;
+            eprint!("[PARENT] pid: {}", pid);
             return Ok(());
         }
         Ok(ForkResult::Child) => {
             // Creates need session with the child the session leader.
+
             if let Err(e) = setsid() {
                 println!(
                     "Setsid() failed to make the child process session leader: {}",
@@ -119,34 +122,15 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                 );
                 process::exit(1);
             }
+            unshare_pid_and_uts_namespace(); // Isolate processes
+
             match unsafe { fork() } {
-                Ok(ForkResult::Parent { child, .. }) => {
-                    // Some(WaitPidFlag::WNOHANG)
-                    match waitpid(child, None)? {
-                        WaitStatus::Exited(c_pid, status) => {
-                            eprint!(
-                                "[Exited] Pid: {} exited with status code {}.",
-                                c_pid, status
-                            )
-                        }
-                        WaitStatus::Signaled(c_pid, signal, core_dumped) => {
-                            eprint!(
-                                "[Signaled] Pid: {} exited from signal {} and core dumped was {:?}.",
-                                c_pid, signal, core_dumped
-                            )
-                        }
-                        WaitStatus::Stopped(c_pid, signal) => {
-                            eprint!("[Stopped] Pid: {} exited from signal {}.", c_pid, signal)
-                        }
-                        WaitStatus::Continued(c_pid) => {
-                            eprint!("[Continued] Pid: {} continues.", c_pid)
-                        }
-                        WaitStatus::StillAlive => {
-                            eprint!("[StillAlive] Still alive...")
-                        }
-                        WaitStatus::PtraceEvent(_, _, _) => {}
-                        WaitStatus::PtraceSyscall(_) => {}
-                    }
+                Ok(ForkResult::Parent { child }) => {
+                    let child_pid = child.as_raw();
+                    eprint!("[CHILD] pid: {}", child_pid);
+                    json::update_container_status(name, Some(child_pid), json::State::Running)?;
+
+                    waitpid(child, None)?;
                     json::update_container_status(name, None, json::State::Stopped)?;
 
                     return Ok(());
@@ -229,7 +213,6 @@ pub fn start(name: &str) {
     unshare_user_namespace(); // Get privileges
     unshare_mount_namespace(); // Isolate filesystem
     mount_fs_overlay(&bento_config); // Set up container root
-    unshare_pid_and_uts_namespace(); // Isolate processes
     if let Err(e) = fork_into_namespaces(&bento_config, name) {
         eprint!("Start failed: {}", e) // Clean exit
     }
@@ -264,12 +247,30 @@ fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
     Ok(())
 }
 
-pub fn stop(container: &Container) -> Result<()> {
+pub fn stop(name: &str, container: &Container) -> Result<()> {
     if let Some(c_pid) = container.pid {
         let pid = Pid::from_raw(c_pid);
         match apply_signal(pid, Signal::SIGTERM) {
-            Ok(()) => return Ok(()),
-            Err(e) => return Err(anyhow!(e)),
+            Ok(()) => {
+                for i in 1..=10 {
+                    if let Some(c) = json::check_existing_container(name) {
+                        match c.state {
+                            State::Stopped => return Ok(()),
+                            _ => {
+                                if i < 10 {
+                                    thread::sleep(time::Duration::from_secs(1));
+                                } else {
+                                    apply_signal(pid, Signal::SIGKILL)?;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                }
+                thread::sleep(Duration::from_millis(200));
+                return Ok(());
+            }
+            Err(e) => return Err(e),
         }
     } else {
         return Err(anyhow!(ErrorKind::NotFound));

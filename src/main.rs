@@ -57,8 +57,8 @@ fn main() {
             }
         }
         Some(Commands::Stop { name }) => match json::check_existing_container(name) {
-            Some(container) => match stop(&container) {
-                Ok(()) => json::print_named_container_state(name, &container.state, container.pid),
+            Some(container) => match stop(name, &container) {
+                Ok(()) => eprint!("Container {} stopped successfully", name),
                 Err(e) => eprint!("{:?}", e),
             },
             None => {
