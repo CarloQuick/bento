@@ -212,7 +212,7 @@ pub fn start(name: &str) {
     unshare_mount_namespace(); // Isolate filesystem
     mount_fs_overlay(&bento_config); // Set up container root
     if let Err(e) = fork_into_namespaces(&bento_config, name) {
-        eprint!("Start failed: {}", e) // Clean exit
+        eprintln!("Start failed: {}", e) // Clean exit
     }
 }
 
@@ -267,6 +267,18 @@ pub fn stop(name: &str, container: &Container) -> Result<()> {
                 thread::sleep(Duration::from_millis(200));
                 return Ok(());
             }
+            Err(e) => return Err(e),
+        }
+    } else {
+        return Err(anyhow!(ErrorKind::NotFound));
+    };
+}
+
+pub fn kill_proc(container: &Container) -> Result<()> {
+    if let Some(c_pid) = container.pid {
+        let pid = Pid::from_raw(c_pid);
+        match apply_signal(pid, Signal::SIGKILL) {
+            Ok(()) => return Ok(()),
             Err(e) => return Err(e),
         }
     } else {
