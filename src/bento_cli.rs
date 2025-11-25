@@ -44,9 +44,15 @@ pub enum Commands {
         #[arg(short, long)]
         all: bool,
     },
-    /// Returns the status of the identified container
+    /// Sends SIGTERM to container's process or SIGKILL if taking too long
     Stop {
-        /// Name of the already created container
+        /// Name of the container attempt a gracefully end
+        #[arg(short, long)]
+        name: String,
+    },
+    /// Sends SIGKILL to container's process
+    Kill {
+        /// Name of the container to forcibly kill
         #[arg(short, long)]
         name: String,
     },
