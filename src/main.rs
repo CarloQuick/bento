@@ -74,6 +74,14 @@ fn main() {
                 eprintln!("Sorry, {} is not an existing Bento container.", name);
             }
         },
+        Some(Commands::Exec { name, args }) => match json::check_existing_container(name) {
+            Some(_) => {
+                eprintln!("{:?} {:?}", name, args)
+            }
+            None => {
+                eprintln!("Sorry, {} is not an existing Bento container.", name);
+            }
+        },
         None => {}
     }
 }

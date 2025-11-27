@@ -56,4 +56,12 @@ pub enum Commands {
         #[arg(short, long)]
         name: String,
     },
+    /// Execute commands inside a container
+    Exec {
+        /// Name of the container to align with
+        name: String,
+        /// Container commands
+        #[arg(allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
