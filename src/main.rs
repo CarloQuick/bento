@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use bento::{
     bento_cli::{Cli, Commands},
-    json,
-    runtime::{create, kill_proc, start, stop},
+    json::{self, State},
+    runtime::{create, exec, kill_proc, start, stop},
 };
 use clap::Parser;
 use dotenv::dotenv;
@@ -75,9 +75,13 @@ fn main() {
             }
         },
         Some(Commands::Exec { name, args }) => match json::check_existing_container(name) {
-            Some(_) => {
-                eprintln!("{:?} {:?}", name, args)
-            }
+            Some(container) => match container.state {
+                State::Running => match exec(&container) {
+                    Ok(()) => eprintln!("exec successfull"),
+                    Err(e) => eprintln!("{:?}", e),
+                },
+                _ => eprintln!("Sorry, not a running container."),
+            },
             None => {
                 eprintln!("Sorry, {} is not an existing Bento container.", name);
             }

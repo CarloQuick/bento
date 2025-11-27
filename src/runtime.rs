@@ -1,8 +1,9 @@
 use crate::config::{BentoConfigJson, get_bento_config};
 use crate::json::{Container, State};
 use crate::{extract, json};
-use anyhow::{Result, anyhow};
+use anyhow::{Error, Result, anyhow};
 use nix::mount::{mount, umount};
+use nix::sched::setns;
 use nix::sys::signal::Signal;
 use nix::sys::signal::kill;
 use nix::sys::wait::waitpid;
@@ -13,7 +14,9 @@ use nix::{
     unistd::{Pid, getpid},
 };
 use std::ffi::CString;
+use std::fs::File;
 use std::io::ErrorKind;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
@@ -284,6 +287,20 @@ pub fn kill_proc(container: &Container) -> Result<()> {
     } else {
         return Err(anyhow!(ErrorKind::NotFound));
     };
+}
+
+pub fn exec(container: &Container) -> Result<()> {
+    eprintln!("Yup, she is running alright: {:?}", container);
+    if let Some(pid) = container.pid {
+        let proc_fd: PathBuf = PathBuf::from("/proc").join(pid.to_string()).join("ns");
+        let f = File::open(proc_fd)?;
+        let borrowed_fd: BorrowedFd<'_> = f.as_fd();
+        setns(borrowed_fd, CloneFlags::CLONE_NEWPID)?;
+
+        return Ok(());
+    } else {
+        return Err(anyhow!(ErrorKind::NotFound));
+    }
 }
 
 pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {
