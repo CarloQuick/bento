@@ -1,7 +1,7 @@
 use crate::config::{BentoConfigJson, get_bento_config};
 use crate::json::{Container, State};
 use crate::{extract, json};
-use anyhow::{Error, Result, anyhow};
+use anyhow::{Result, anyhow};
 use nix::mount::{mount, umount};
 use nix::sched::setns;
 use nix::sys::signal::Signal;
@@ -136,26 +136,36 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
 
                     return Ok(());
                 }
-                Ok(ForkResult::Child) => {}
+                Ok(ForkResult::Child) => {
+                    // Child process continues its work as a daemon
+                    //** In the child: chroot into the prepared directory **//
+                    chroot(&bento_config.merge).expect("Failed to chroot");
+                    std::env::set_current_dir(&bento_config.cwd)
+                        .expect("Failed to set the container working directory");
+                    // let target = &bento_config.cwd.join("proc");
+                    mount(
+                        Some("proc"),
+                        "/proc",
+                        Some("proc"),
+                        MsFlags::empty(),
+                        None::<&[u8]>,
+                    )
+                    .expect("Failed to Mount /proc");
+                    sethostname(name).expect("Failed to set the hostname");
+                    let (path, args, env) = get_execve_params(bento_config);
+
+                    // let path = CString::new("/usr/bin").expect("Not a valid path");
+                    // let arg1 = CString::new("python").expect("Not a valid argument");
+                    // let arg2 = CString::new("main.py").expect("Not a valid argument");
+                    // let args = vec![arg1, arg2];
+                    // let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
+                    // let env = vec![env_var];
+                    execve(&path, &args, &env)
+                        .expect("Failed to execute exec function in container");
+                    process::exit(0);
+                }
                 Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
             }
-
-            // Child process continues its work as a daemon
-            //** In the child: chroot into the prepared directory **//
-            chroot(&bento_config.merge).expect("Failed to chroot");
-            std::env::set_current_dir(&bento_config.cwd)
-                .expect("Failed to set the container working directory");
-            sethostname(name).expect("Failed to set the hostname");
-            let (path, args, env) = get_execve_params(bento_config);
-
-            // let path = CString::new("/usr/bin").expect("Not a valid path");
-            // let arg1 = CString::new("python").expect("Not a valid argument");
-            // let arg2 = CString::new("main.py").expect("Not a valid argument");
-            // let args = vec![arg1, arg2];
-            // let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
-            // let env = vec![env_var];
-            execve(&path, &args, &env).expect("Failed to execute exec function in container");
-            process::exit(0);
         }
         Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
     }
@@ -289,13 +299,60 @@ pub fn kill_proc(container: &Container) -> Result<()> {
     };
 }
 
-pub fn exec(container: &Container) -> Result<()> {
+pub fn exec(name: &String, container: &Container) -> Result<()> {
     eprintln!("Yup, she is running alright: {:?}", container);
     if let Some(pid) = container.pid {
-        let proc_fd: PathBuf = PathBuf::from("/proc").join(pid.to_string()).join("ns");
-        let f = File::open(proc_fd)?;
-        let borrowed_fd: BorrowedFd<'_> = f.as_fd();
-        setns(borrowed_fd, CloneFlags::CLONE_NEWPID)?;
+        let container_proc: PathBuf = PathBuf::from("/proc").join(&pid.to_string()).join("ns");
+        assert!(fs::exists(&container_proc).is_ok());
+        let user_ns: PathBuf = PathBuf::from(&container_proc).join("user");
+        let mount_ns: PathBuf = PathBuf::from(&container_proc).join("mnt");
+        let pid_ns: PathBuf = PathBuf::from(&container_proc).join("pid");
+        let uts_ns: PathBuf = PathBuf::from(&container_proc).join("uts");
+        assert!(fs::exists(&user_ns).is_ok());
+        assert!(fs::exists(&mount_ns).is_ok());
+        assert!(fs::exists(&pid_ns).is_ok());
+        assert!(fs::exists(&uts_ns).is_ok());
+
+        let user_ns_file = File::open(user_ns).expect("Failed to open user_ns_file in exec");
+        let mount_ns_file = File::open(mount_ns).expect("Failed to open mount_ns_file in exec");
+        let pid_ns_file = File::open(pid_ns).expect("Failed to open pid_ns_file in exec");
+        let uts_ns_file = File::open(uts_ns).expect("Failed to open userns_file in exec");
+
+        let borrowed_user_fd: BorrowedFd<'_> = user_ns_file.as_fd();
+        let borrowed_mount_fd: BorrowedFd<'_> = mount_ns_file.as_fd();
+        let borrowed_pid_fd: BorrowedFd<'_> = pid_ns_file.as_fd();
+        let borrowed_uts_fd: BorrowedFd<'_> = uts_ns_file.as_fd();
+        setns(borrowed_user_fd, CloneFlags::CLONE_NEWUSER)
+            .expect("setns failed to set the user namespace");
+        setns(borrowed_mount_fd, CloneFlags::CLONE_NEWNS)
+            .expect("setns failed to set the mount namespace");
+        setns(borrowed_pid_fd, CloneFlags::CLONE_NEWPID)
+            .expect("setns failed to set the pid namespace");
+        setns(borrowed_uts_fd, CloneFlags::CLONE_NEWUTS)
+            .expect("setns failed to set the uts namespace");
+        let bento_config_path = get_bento_config_path(name);
+        let bento_config =
+            get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
+
+        match unsafe { fork() } {
+            Ok(ForkResult::Parent { child }) => {
+                waitpid(child, None)?;
+                return Ok(());
+            }
+            Ok(ForkResult::Child) => {
+                chroot(&bento_config.merge).expect("failed to chroot in to the merge from exec");
+                std::env::set_current_dir(&bento_config.cwd)
+                    .expect("Failed to set the container working directory");
+                let path = CString::new("/bin/bash").expect("Not a valid path");
+                let arg1 = CString::new("bash").expect("Not a valid argument");
+                // let arg2 = CString::new("--v").expect("Not a valid argument");
+                let args = vec![arg1];
+                let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
+                let env = vec![env_var];
+                execve(&path, &args, &env).expect("Failed to execute exec function in container");
+            }
+            Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
+        }
 
         return Ok(());
     } else {
