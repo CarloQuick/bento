@@ -76,7 +76,7 @@ fn main() {
         },
         Some(Commands::Exec { name, args }) => match json::check_existing_container(name) {
             Some(container) => match container.state {
-                State::Running => match exec(name, &container) {
+                State::Running => match exec(name, &container, args) {
                     Ok(()) => eprintln!("exec successful"),
                     Err(e) => eprintln!("{:?}", e),
                 },

@@ -299,7 +299,7 @@ pub fn kill_proc(container: &Container) -> Result<()> {
     };
 }
 
-pub fn exec(name: &String, container: &Container) -> Result<()> {
+pub fn exec(name: &String, container: &Container, args: &Vec<CString>) -> Result<()> {
     eprintln!("Yup, she is running alright: {:?}", container);
     if let Some(pid) = container.pid {
         let container_proc: PathBuf = PathBuf::from("/proc").join(&pid.to_string()).join("ns");
@@ -343,12 +343,18 @@ pub fn exec(name: &String, container: &Container) -> Result<()> {
                 chroot(&bento_config.merge).expect("failed to chroot in to the merge from exec");
                 std::env::set_current_dir(&bento_config.cwd)
                     .expect("Failed to set the container working directory");
-                let path = CString::new("/bin/bash").expect("Not a valid path");
-                let arg1 = CString::new("bash").expect("Not a valid argument");
-                // let arg2 = CString::new("--v").expect("Not a valid argument");
-                let args = vec![arg1];
-                let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
-                let env = vec![env_var];
+
+                // let arg1 = CString::new("bash").expect("Not a valid argument");
+                // // let arg2 = CString::new("--v").expect("Not a valid argument");
+                // let args = vec![arg1];
+                // let mut env_vec: Vec<CString> = Vec::with_capacity(bento_config.env.len());
+                // for env in &bento_config.env {
+                //     let env_c_str = CString::new(env.to_owned()).expect("Could convert to string");
+                //     env_vec.push(env_c_str);
+                // }
+                // let env = vec![env_var];
+                let (path, _, env) = get_execve_params(&bento_config);
+                println!("path = {:?} args = {:?} env = {:?}", path, args, env);
                 execve(&path, &args, &env).expect("Failed to execute exec function in container");
             }
             Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),

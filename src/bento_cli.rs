@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ffi::CString, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 #[derive(Parser)]
@@ -60,8 +60,8 @@ pub enum Commands {
     Exec {
         /// Name of the container to align with
         name: String,
-        /// Container commands
+        /// Container args
         #[arg(allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Vec<CString>,
     },
 }
