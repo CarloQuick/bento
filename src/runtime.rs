@@ -137,34 +137,39 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                     // Child process continues its work as a daemon
                     //** In the child: chroot into the prepared directory **//
                     chroot(&bento_config.merge).expect("Failed to chroot");
-                    std::env::set_current_dir(&bento_config.cwd)
-                        .expect("Failed to set the container working directory");
-                    // let target = &bento_config.cwd.join("proc");
-                    mount(
-                        Some("proc"),
-                        "/proc",
-                        Some("proc"),
-                        MsFlags::empty(),
-                        None::<&[u8]>,
-                    )
-                    .expect("Failed to Mount /proc");
-                    sethostname(name).expect("Failed to set the hostname");
-                    let (path, args, env) = get_execve_params(bento_config);
-
-                    // let path = CString::new("/usr/bin").expect("Not a valid path");
-                    // let arg1 = CString::new("python").expect("Not a valid argument");
-                    // let arg2 = CString::new("main.py").expect("Not a valid argument");
-                    // let args = vec![arg1, arg2];
-                    // let env_var = CString::new("MY_VAR=hello").expect("Not a env variable");
-                    // let env = vec![env_var];
-                    execve(&path, &args, &env)
-                        .expect("Failed to execute exec function in container");
-                    process::exit(0);
+                    match std::env::set_current_dir(&bento_config.cwd) {
+                        Ok(()) => {
+                            mount(
+                                Some("proc"),
+                                "/proc",
+                                Some("proc"),
+                                MsFlags::empty(),
+                                None::<&[u8]>,
+                            )
+                            .expect("Failed to Mount /proc");
+                            sethostname(name).expect("Failed to set the hostname");
+                            let (path, args, env) = get_execve_params(bento_config);
+                            match execve(&path, &args, &env) {
+                                Ok(_) => {
+                                    println!("execve successful");
+                                    process::exit(0);
+                                }
+                                Err(e) => {
+                                    println!("execve failed: {}", e);
+                                    process::exit(1);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            println!("Failed to set the container working directory: {}", e);
+                            process::exit(1);
+                        }
+                    }
                 }
-                Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
+                Err(e) => return Err(anyhow!("Failed to fork the process: {}", e)),
             }
         }
-        Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
+        Err(e) => return Err(anyhow!("Failed to fork the process: {}", e)),
     }
 }
 
@@ -390,12 +395,23 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
             }
             Ok(ForkResult::Child) => {
                 chroot(&bento_config.merge).expect("failed to chroot in to the merge from exec");
-                std::env::set_current_dir(&bento_config.cwd)?;
-
-                match get_path_from_cmd(cmd, args, &bento_config) {
-                    Ok((path, args, env)) => {
-                        execve(&path, &args, &env)?;
-                    }
+                match std::env::set_current_dir(&bento_config.cwd) {
+                    Ok(()) => match get_path_from_cmd(cmd, args, &bento_config) {
+                        Ok((path, args, env)) => match execve(&path, &args, &env) {
+                            Ok(_) => {
+                                println!("execve successful");
+                                process::exit(0);
+                            }
+                            Err(e) => {
+                                println!("execve failed: {}", e);
+                                process::exit(1);
+                            }
+                        },
+                        Err(e) => {
+                            println!("execve failed: {}", e);
+                            process::exit(1);
+                        }
+                    },
                     Err(e) => {
                         println!("execve failed: {}", e);
                         process::exit(1);
@@ -404,8 +420,6 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
             }
             Err(e) => return Err(anyhow!("Failed to fork the exec process: {}", e)),
         }
-
-        return Ok(());
     } else {
         return Err(anyhow!(ErrorKind::NotFound));
     }
