@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ffi::CString, path::PathBuf};
 
 use clap::{Parser, Subcommand};
 #[derive(Parser)]
@@ -55,5 +55,16 @@ pub enum Commands {
         /// Name of the container to forcibly kill
         #[arg(short, long)]
         name: String,
+    },
+    /// Execute commands inside a container
+    Exec {
+        /// Name of the container to align with
+        name: String,
+        /// Container args
+        #[arg(allow_hyphen_values = true)]
+        cmd: String,
+        /// Container args
+        #[arg(allow_hyphen_values = true)]
+        args: Vec<CString>,
     },
 }
