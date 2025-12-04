@@ -222,7 +222,7 @@ fn get_path_from_cmd(
                     Some(p) => {
                         path.push_str(p);
                     }
-                    None => panic!("Failed to convert execve pathbuf to string"),
+                    None => return Err(anyhow!("Failed to convert exec pathbuf to string")),
                 }
             }
         }
@@ -391,6 +391,7 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
             Ok(ForkResult::Child) => {
                 chroot(&bento_config.merge).expect("failed to chroot in to the merge from exec");
                 std::env::set_current_dir(&bento_config.cwd)?;
+
                 match get_path_from_cmd(cmd, args, &bento_config) {
                     Ok((path, args, env)) => {
                         execve(&path, &args, &env)?;
