@@ -150,10 +150,6 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                             sethostname(name).expect("Failed to set the hostname");
                             let (path, args, env) = get_execve_params(bento_config);
                             match execve(&path, &args, &env) {
-                                Ok(_) => {
-                                    println!("execve successful");
-                                    process::exit(0);
-                                }
                                 Err(e) => {
                                     println!("execve failed: {}", e);
                                     process::exit(1);
@@ -393,15 +389,10 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
                 waitpid(child, None)?;
                 return Ok(());
             }
-            Ok(ForkResult::Child) => {
-                chroot(&bento_config.merge).expect("failed to chroot in to the merge from exec");
-                match std::env::set_current_dir(&bento_config.cwd) {
+            Ok(ForkResult::Child) => match chroot(&bento_config.merge) {
+                Ok(()) => match std::env::set_current_dir(&bento_config.cwd) {
                     Ok(()) => match get_path_from_cmd(cmd, args, &bento_config) {
                         Ok((path, args, env)) => match execve(&path, &args, &env) {
-                            Ok(_) => {
-                                println!("execve successful");
-                                process::exit(0);
-                            }
                             Err(e) => {
                                 println!("execve failed: {}", e);
                                 process::exit(1);
@@ -416,8 +407,12 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
                         println!("execve failed: {}", e);
                         process::exit(1);
                     }
+                },
+                Err(e) => {
+                    println!("chroot failed: {}", e);
+                    process::exit(1);
                 }
-            }
+            },
             Err(e) => return Err(anyhow!("Failed to fork the exec process: {}", e)),
         }
     } else {
