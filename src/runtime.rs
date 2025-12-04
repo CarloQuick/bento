@@ -344,11 +344,29 @@ pub fn kill_proc(container: &Container) -> Result<()> {
 pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CString>) -> Result<()> {
     if let Some(pid) = container.pid {
         let container_proc: PathBuf = PathBuf::from("/proc").join(&pid.to_string()).join("ns");
+        if !container_proc.exists() {
+            return Err(anyhow!("Container process {} not found in /proc", pid));
+        }
         let user_ns: PathBuf = PathBuf::from(&container_proc).join("user");
         let mount_ns: PathBuf = PathBuf::from(&container_proc).join("mnt");
         let pid_ns: PathBuf = PathBuf::from(&container_proc).join("pid");
         let uts_ns: PathBuf = PathBuf::from(&container_proc).join("uts");
 
+        if !user_ns.exists() {
+            return Err(anyhow!(
+                "Container process {} not found in /proc//user",
+                pid
+            ));
+        }
+        if !mount_ns.exists() {
+            return Err(anyhow!("Container process {} not found in /proc//mnt", pid));
+        }
+        if !pid_ns.exists() {
+            return Err(anyhow!("Container process {} not found in proc//pid", pid));
+        }
+        if !uts_ns.exists() {
+            return Err(anyhow!("Container process {} not found in /proc//uts", pid));
+        }
         let user_ns_file = File::open(user_ns)?;
         let mount_ns_file = File::open(mount_ns)?;
         let pid_ns_file = File::open(pid_ns)?;
@@ -373,16 +391,6 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
             Ok(ForkResult::Child) => {
                 chroot(&bento_config.merge).expect("failed to chroot in to the merge from exec");
                 std::env::set_current_dir(&bento_config.cwd)?;
-
-                // let arg1 = CString::new("bash").expect("Not a valid argument");
-                // // let arg2 = CString::new("--v").expect("Not a valid argument");
-                // let args = vec![arg1];
-                // let mut env_vec: Vec<CString> = Vec::with_capacity(bento_config.env.len());
-                // for env in &bento_config.env {
-                //     let env_c_str = CString::new(env.to_owned()).expect("Could convert to string");
-                //     env_vec.push(env_c_str);
-                // }
-                // let env = vec![env_var];
                 match get_path_from_cmd(cmd, args, &bento_config) {
                     Ok((path, args, env)) => {
                         execve(&path, &args, &env)?;
