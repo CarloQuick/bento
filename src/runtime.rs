@@ -52,7 +52,6 @@ fn unshare_mount_namespace() {
 fn mount_fs_overlay(bento_config: &BentoConfigJson) {
     let mut lowerdir = String::new();
     for (i, dir) in bento_config.lowerdir.iter().enumerate() {
-        assert!(fs::exists(dir).is_ok());
         if i == bento_config.lowerdir.len() - 1 {
             lowerdir.push_str(dir);
         } else {
@@ -63,8 +62,7 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
 
     let fstype = Some("overlay");
     let flags = MsFlags::empty();
-    assert!(fs::exists(&bento_config.upperdir).is_ok());
-    assert!(fs::exists(&bento_config.workdir).is_ok());
+
     let overlay_options = format!(
         "lowerdir={},upperdir={},workdir={}",
         lowerdir,
@@ -78,7 +76,6 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
         .expect("Failed to Mount Filesystem");
 
     let bind_mount = &bento_config.merge.join("app");
-    assert!(fs::exists(&bento_config.merge).is_ok());
     if !bind_mount.exists() {
         fs::create_dir_all(&bind_mount).expect("Failed to create /app");
     }
@@ -347,15 +344,10 @@ pub fn kill_proc(container: &Container) -> Result<()> {
 pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CString>) -> Result<()> {
     if let Some(pid) = container.pid {
         let container_proc: PathBuf = PathBuf::from("/proc").join(&pid.to_string()).join("ns");
-        assert!(fs::exists(&container_proc).is_ok());
         let user_ns: PathBuf = PathBuf::from(&container_proc).join("user");
         let mount_ns: PathBuf = PathBuf::from(&container_proc).join("mnt");
         let pid_ns: PathBuf = PathBuf::from(&container_proc).join("pid");
         let uts_ns: PathBuf = PathBuf::from(&container_proc).join("uts");
-        assert!(fs::exists(&user_ns).is_ok());
-        assert!(fs::exists(&mount_ns).is_ok());
-        assert!(fs::exists(&pid_ns).is_ok());
-        assert!(fs::exists(&uts_ns).is_ok());
 
         let user_ns_file = File::open(user_ns)?;
         let mount_ns_file = File::open(mount_ns)?;
