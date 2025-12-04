@@ -399,12 +399,12 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
                             }
                         },
                         Err(e) => {
-                            println!("execve failed: {}", e);
+                            println!("failed to get path {}", e);
                             process::exit(1);
                         }
                     },
                     Err(e) => {
-                        println!("execve failed: {}", e);
+                        println!("failed to set current dir: {}", e);
                         process::exit(1);
                     }
                 },
