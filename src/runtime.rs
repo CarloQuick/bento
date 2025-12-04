@@ -171,15 +171,7 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
     }
 }
 
-fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
-    let mut args: Vec<CString> = Vec::new();
-    let mut env: Vec<CString> = Vec::new();
-    for arg in bento_config.cmd.iter() {
-        args.push(CString::new(arg.to_owned()).unwrap());
-    }
-    for e in bento_config.env.iter() {
-        env.push(CString::new(e.to_owned()).unwrap());
-    }
+fn get_path_from_config(bento_config: &BentoConfigJson) -> String {
     let mut path = String::new();
 
     if let Some(cmd) = bento_config.cmd.get(0) {
@@ -202,7 +194,60 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
             }
         }
     }
-    (CString::new(path).unwrap(), args, env)
+    path
+}
+
+fn get_path_from_cmd(
+    cmd: &String,
+    args: &Vec<CString>,
+    bento_config: &BentoConfigJson,
+) -> Result<(CString, Vec<CString>, Vec<CString>)> {
+    let mut env: Vec<CString> = Vec::new();
+    let mut arg_v: Vec<CString> = Vec::new();
+    let cmd_c_str = CString::new(cmd.to_owned())?;
+    arg_v.push(cmd_c_str);
+    for arg in args.iter() {
+        arg_v.push(CString::new(arg.to_owned())?);
+    }
+    for e in bento_config.env.iter() {
+        env.push(CString::new(e.to_owned())?);
+    }
+    let mut path = String::new();
+
+    if cmd.contains("/") {
+        // hunt in the provided paths
+        path.push_str(cmd);
+    } else {
+        let env_v = get_executable_paths(&bento_config.env);
+        for e in env_v.iter() {
+            if Path::new(e).join(cmd).is_file() {
+                match PathBuf::from(e).join(cmd).to_str() {
+                    Some(p) => {
+                        path.push_str(p);
+                    }
+                    None => panic!("Failed to convert execve pathbuf to string"),
+                }
+            }
+        }
+    }
+    Ok((CString::new(path)?, arg_v, env))
+}
+
+fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
+    let mut args: Vec<CString> = Vec::new();
+    let mut env: Vec<CString> = Vec::new();
+    for arg in bento_config.cmd.iter() {
+        args.push(CString::new(arg.to_owned()).unwrap());
+    }
+    for e in bento_config.env.iter() {
+        env.push(CString::new(e.to_owned()).unwrap());
+    }
+    let path = get_path_from_config(bento_config);
+    (
+        CString::new(path).expect("Could not extract path for execve params"),
+        args,
+        env,
+    )
 }
 
 fn unmount_and_clean_up(merge: &PathBuf) {
@@ -299,8 +344,7 @@ pub fn kill_proc(container: &Container) -> Result<()> {
     };
 }
 
-pub fn exec(name: &String, container: &Container, args: &Vec<CString>) -> Result<()> {
-    eprintln!("Yup, she is running alright: {:?}", container);
+pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CString>) -> Result<()> {
     if let Some(pid) = container.pid {
         let container_proc: PathBuf = PathBuf::from("/proc").join(&pid.to_string()).join("ns");
         assert!(fs::exists(&container_proc).is_ok());
@@ -313,26 +357,21 @@ pub fn exec(name: &String, container: &Container, args: &Vec<CString>) -> Result
         assert!(fs::exists(&pid_ns).is_ok());
         assert!(fs::exists(&uts_ns).is_ok());
 
-        let user_ns_file = File::open(user_ns).expect("Failed to open user_ns_file in exec");
-        let mount_ns_file = File::open(mount_ns).expect("Failed to open mount_ns_file in exec");
-        let pid_ns_file = File::open(pid_ns).expect("Failed to open pid_ns_file in exec");
-        let uts_ns_file = File::open(uts_ns).expect("Failed to open userns_file in exec");
+        let user_ns_file = File::open(user_ns)?;
+        let mount_ns_file = File::open(mount_ns)?;
+        let pid_ns_file = File::open(pid_ns)?;
+        let uts_ns_file = File::open(uts_ns)?;
 
         let borrowed_user_fd: BorrowedFd<'_> = user_ns_file.as_fd();
         let borrowed_mount_fd: BorrowedFd<'_> = mount_ns_file.as_fd();
         let borrowed_pid_fd: BorrowedFd<'_> = pid_ns_file.as_fd();
         let borrowed_uts_fd: BorrowedFd<'_> = uts_ns_file.as_fd();
-        setns(borrowed_user_fd, CloneFlags::CLONE_NEWUSER)
-            .expect("setns failed to set the user namespace");
-        setns(borrowed_mount_fd, CloneFlags::CLONE_NEWNS)
-            .expect("setns failed to set the mount namespace");
-        setns(borrowed_pid_fd, CloneFlags::CLONE_NEWPID)
-            .expect("setns failed to set the pid namespace");
-        setns(borrowed_uts_fd, CloneFlags::CLONE_NEWUTS)
-            .expect("setns failed to set the uts namespace");
+        setns(borrowed_user_fd, CloneFlags::CLONE_NEWUSER)?;
+        setns(borrowed_mount_fd, CloneFlags::CLONE_NEWNS)?;
+        setns(borrowed_pid_fd, CloneFlags::CLONE_NEWPID)?;
+        setns(borrowed_uts_fd, CloneFlags::CLONE_NEWUTS)?;
         let bento_config_path = get_bento_config_path(name);
-        let bento_config =
-            get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
+        let bento_config = get_bento_config(&bento_config_path)?;
 
         match unsafe { fork() } {
             Ok(ForkResult::Parent { child }) => {
@@ -341,8 +380,7 @@ pub fn exec(name: &String, container: &Container, args: &Vec<CString>) -> Result
             }
             Ok(ForkResult::Child) => {
                 chroot(&bento_config.merge).expect("failed to chroot in to the merge from exec");
-                std::env::set_current_dir(&bento_config.cwd)
-                    .expect("Failed to set the container working directory");
+                std::env::set_current_dir(&bento_config.cwd)?;
 
                 // let arg1 = CString::new("bash").expect("Not a valid argument");
                 // // let arg2 = CString::new("--v").expect("Not a valid argument");
@@ -353,9 +391,12 @@ pub fn exec(name: &String, container: &Container, args: &Vec<CString>) -> Result
                 //     env_vec.push(env_c_str);
                 // }
                 // let env = vec![env_var];
-                let (path, _, env) = get_execve_params(&bento_config);
-                println!("path = {:?} args = {:?} env = {:?}", path, args, env);
-                execve(&path, &args, &env).expect("Failed to execute exec function in container");
+                match get_path_from_cmd(cmd, args, &bento_config) {
+                    Ok((path, args, env)) => {
+                        execve(&path, &args, &env)?;
+                    }
+                    Err(e) => println!("{}", e),
+                }
             }
             Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
         }

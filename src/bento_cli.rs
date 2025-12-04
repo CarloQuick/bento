@@ -62,6 +62,9 @@ pub enum Commands {
         name: String,
         /// Container args
         #[arg(allow_hyphen_values = true)]
+        cmd: String,
+        /// Container args
+        #[arg(allow_hyphen_values = true)]
         args: Vec<CString>,
     },
 }
