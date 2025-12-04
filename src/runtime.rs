@@ -395,10 +395,13 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
                     Ok((path, args, env)) => {
                         execve(&path, &args, &env)?;
                     }
-                    Err(e) => println!("{}", e),
+                    Err(e) => {
+                        println!("execve failed: {}", e);
+                        process::exit(1);
+                    }
                 }
             }
-            Err(e) => return Err(anyhow!("Failed to fork the repo: {}", e)),
+            Err(e) => return Err(anyhow!("Failed to fork the exec process: {}", e)),
         }
 
         return Ok(());
