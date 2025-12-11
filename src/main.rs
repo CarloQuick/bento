@@ -17,12 +17,17 @@ fn main() {
             name,
             image,
             mount,
-            cwd,
+            current_working_directory,
         }) => {
+            let cwd = match current_working_directory {
+                Some(c) => c,
+                None => &PathBuf::from("/"),
+            };
             let mount_dir = match mount {
                 Some(m) => m,
                 None => &PathBuf::new(),
             };
+
             match create(name, image, mount_dir, cwd) {
                 Ok(_) => eprintln!("🍱 Bento Container {} finished", name),
                 Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
