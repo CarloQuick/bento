@@ -29,13 +29,12 @@ pub enum Commands {
     /// Starts a container with the data compiled in "create"
     Start {
         /// Name of the already created container
-        #[arg(short, long)]
         name: String,
     },
     /// Returns the status of the identified container
+    #[group(required = true, multiple = false)]
     Status {
         /// Name of the already created container
-        #[arg(short, long)]
         name: Option<String>,
 
         /// Name all created container
@@ -45,13 +44,11 @@ pub enum Commands {
     /// Sends SIGTERM to container's process or SIGKILL if taking too long
     Stop {
         /// Name of the container attempt a gracefully end
-        #[arg(short, long)]
         name: String,
     },
     /// Sends SIGKILL to container's process
     Kill {
         /// Name of the container to forcibly kill
-        #[arg(short, long)]
         name: String,
     },
     /// Execute commands inside a container
