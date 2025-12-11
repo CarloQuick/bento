@@ -75,19 +75,22 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
     mount(Some("overlay"), &bento_config.merge, fstype, flags, data)
         .expect("Failed to Mount Filesystem");
 
-    let bind_mount = &bento_config.merge.join("app");
-    if !bind_mount.exists() {
-        fs::create_dir_all(&bind_mount).expect("Failed to create /app");
+    if !bento_config.mount.as_os_str().is_empty() {
+        println!("The PathBuf is empty!");
+        let bind_mount = &bento_config.merge.join(&bento_config.mount);
+        if !bind_mount.exists() {
+            fs::create_dir_all(&bind_mount).expect("Failed to create mount");
+        }
+        // Hardcoded until we add user/cli mount options.
+        mount(
+            Some(&bento_config.mount),
+            bind_mount,
+            None::<&Path>,
+            MsFlags::MS_BIND,
+            None::<&[u8]>,
+        )
+        .expect("Failed to Mount USER Filesystem");
     }
-    // Hardcoded until we add user/cli mount options.
-    mount(
-        Some(&bento_config.mount),
-        bind_mount,
-        None::<&Path>,
-        MsFlags::MS_BIND,
-        None::<&[u8]>,
-    )
-    .expect("Failed to Mount USER Filesystem");
 }
 
 pub fn get_bento_config_path(name: &str) -> PathBuf {
@@ -222,6 +225,7 @@ fn get_path_from_cmd(
                 match PathBuf::from(e).join(cmd).to_str() {
                     Some(p) => {
                         path.push_str(p);
+                        break;
                     }
                     None => return Err(anyhow!("Failed to convert exec pathbuf to string")),
                 }
@@ -394,7 +398,7 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
                     Ok(()) => match get_path_from_cmd(cmd, args, &bento_config) {
                         Ok((path, args, env)) => match execve(&path, &args, &env) {
                             Err(e) => {
-                                println!("execve failed: {}", e);
+                                eprintln!("execve failed: {}", e);
                                 process::exit(1);
                             }
                         },
