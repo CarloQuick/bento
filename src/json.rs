@@ -247,6 +247,7 @@ pub fn create_bento_config(
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_oci_index(&index_json_path).expect("Could not read from index.json");
+
     if index_json.manifests[0].media_type.contains("image.index") {
         let nested_digest = &index_json.manifests[0].digest;
         let nested_index_json_path = get_config_path(nested_digest);
