@@ -276,7 +276,13 @@ pub fn start(name: &str) {
     }
 }
 
-pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> Result<()> {
+pub fn create(
+    name: &String,
+    image: &String,
+    mount: &PathBuf,
+    cwd: &PathBuf,
+    user_cmd: &Vec<String>,
+) -> Result<()> {
     let (image, name) = &format_create_params(name, image);
     let (bento_images_env, bento_containers_env) = &get_bento_envs();
 
@@ -293,6 +299,7 @@ pub fn create(name: &String, image: &String, mount: &PathBuf, cwd: &PathBuf) -> 
         &new_bento_container_path,
         mount,
         cwd,
+        user_cmd,
     );
 
     json::add_to_container_manifest(&container_name, &created_container_path)?;
