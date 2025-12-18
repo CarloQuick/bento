@@ -152,6 +152,7 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                             .expect("Failed to Mount /proc");
                             sethostname(name).expect("Failed to set the hostname");
                             let (path, args, env) = get_execve_params(bento_config);
+                            eprint!("path: {:?}, args: {:?}, env: {:?}", path, args, env);
                             match execve(&path, &args, &env) {
                                 Err(e) => {
                                     println!("execve failed: {}", e);
@@ -174,8 +175,33 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
 
 fn get_path_from_config(bento_config: &BentoConfigJson) -> String {
     let mut path = String::new();
-
-    if let Some(cmd) = bento_config.cmd.get(0) {
+    if let Some(cmd) = bento_config.user_cmd.get(0) {
+        if cmd.contains("/") {
+            // hunt in the provided paths
+            path.push_str(cmd);
+        } else {
+            let env_v = get_executable_paths(&bento_config.env);
+            for e in env_v.iter() {
+                if Path::new(e).join(cmd).is_file() {
+                    // let p_ath = Path::new(e).join(cmd);
+                    // let str = p_ath.to_string_lossy();
+                    match PathBuf::from(e).join(cmd).to_str() {
+                        Some(p) => {
+                            path.push_str(p);
+                            break;
+                        }
+                        None => panic!("Failed to convert execve pathbuf to string"),
+                    }
+                }
+            }
+            if path.is_empty() {
+                panic!(
+                    "Could not execute {}. Make sure it is a valid command.",
+                    cmd
+                );
+            }
+        }
+    } else if let Some(cmd) = bento_config.cmd.get(0) {
         if cmd.contains("/") {
             // hunt in the provided paths
             path.push_str(cmd);
@@ -238,8 +264,14 @@ fn get_path_from_cmd(
 fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
     let mut args: Vec<CString> = Vec::new();
     let mut env: Vec<CString> = Vec::new();
-    for arg in bento_config.cmd.iter() {
-        args.push(CString::new(arg.to_owned()).unwrap());
+    if !bento_config.user_cmd.is_empty() {
+        for arg in bento_config.user_cmd.iter() {
+            args.push(CString::new(arg.to_owned()).unwrap());
+        }
+    } else {
+        for arg in bento_config.cmd.iter() {
+            args.push(CString::new(arg.to_owned()).unwrap());
+        }
     }
     for e in bento_config.env.iter() {
         env.push(CString::new(e.to_owned()).unwrap());
@@ -254,8 +286,9 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
 
 fn unmount_and_clean_up(merge: &PathBuf) {
     //** Unmount the container filesystem **//
-    let app = merge.join("app");
-    umount(&app).expect("Failed to Unmount");
+    if merge.join("app").exists() {
+        umount(&merge.join("app")).expect("Failed to Unmount APP");
+    }
     umount(merge).expect("Failed to Unmount");
 }
 
