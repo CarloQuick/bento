@@ -152,7 +152,6 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                             .expect("Failed to Mount /proc");
                             sethostname(name).expect("Failed to set the hostname");
                             let (path, args, env) = get_execve_params(bento_config);
-                            eprint!("path: {:?}, args: {:?}, env: {:?}", path, args, env);
                             match execve(&path, &args, &env) {
                                 Err(e) => {
                                     println!("execve failed: {}", e);
