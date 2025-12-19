@@ -28,12 +28,8 @@ fn main() {
                 Some(m) => m,
                 None => &PathBuf::new(),
             };
-            let user_cmd = match command {
-                Some(c) => c,
-                None => &Vec::new(),
-            };
 
-            match create(name, image, mount_dir, cwd, user_cmd) {
+            match create(name, image, mount_dir, cwd, command) {
                 Ok(_) => eprintln!("🍱 Bento Container {} finished", name),
                 Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
             };
