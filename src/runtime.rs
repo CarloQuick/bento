@@ -196,15 +196,17 @@ fn get_path_from_config(bento_config: &BentoConfigJson) -> Result<String> {
                                 path.push_str(p);
                                 break;
                             }
-                            None => panic!("Failed to convert execve pathbuf to string"),
+                            None => {
+                                return Err(anyhow!("Failed to get the pathbuf as a string"));
+                            }
                         }
                     }
                 }
                 if path.is_empty() {
-                    panic!(
-                        "Could not execute {}. Make sure it is a valid command.",
+                    return Err(anyhow!(
+                        "Failed to find a suitable path for the command: {}",
                         cmd
-                    );
+                    ));
                 }
             }
         }
@@ -266,13 +268,11 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
     }
     match get_path_from_config(bento_config) {
         Ok(path) => {
-            return {
-                (
-                    CString::new(path).expect("Could not extract path for execve params"),
-                    args,
-                    env,
-                )
-            };
+            return (
+                CString::new(path).expect("Could not extract path for execve params"),
+                args,
+                env,
+            );
         }
         Err(e) => panic!("Could not return path from config: {}", e),
     }
