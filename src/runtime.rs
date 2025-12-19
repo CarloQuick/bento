@@ -210,7 +210,7 @@ fn get_path_from_config(bento_config: &BentoConfigJson) -> Result<String> {
                 }
             }
         }
-        None => return Err(anyhow!("Failed to convert exec pathbuf to string")),
+        None => return Err(anyhow!("No commands available in this config or image.")),
     }
     Ok(path)
 }
@@ -367,7 +367,6 @@ pub fn stop(name: &str, container: &Container) -> Result<()> {
                     }
                 }
                 thread::sleep(Duration::from_millis(200));
-
                 return Ok(());
             }
             Err(e) => return Err(e),
@@ -381,9 +380,7 @@ pub fn kill_proc(container: &Container) -> Result<()> {
     if let Some(c_pid) = container.pid {
         let pid = Pid::from_raw(c_pid);
         match apply_signal(pid, Signal::SIGKILL) {
-            Ok(()) => {
-                return Ok(());
-            }
+            Ok(()) => return Ok(()),
             Err(e) => return Err(e),
         }
     } else {
