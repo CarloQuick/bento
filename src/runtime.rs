@@ -132,7 +132,10 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
 
                     waitpid(child, None)?;
                     json::update_container_status(name, None, json::State::Stopped)?;
-                    unmount_and_clean_up(&bento_config.merge); // Clean exit
+                    match unmount_and_clean_up(&bento_config) {
+                        Ok(()) => eprintln!("Successfully unmounted container fs."),
+                        Err(e) => eprint!("Unsuccessfully unmounted container fs: {}", e),
+                    } // Clean exit
 
                     return Ok(());
                 }
@@ -283,20 +286,24 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
     )
 }
 
-fn unmount_and_clean_up(merge: &PathBuf) {
+fn unmount_and_clean_up(bento_config: &BentoConfigJson) -> Result<()> {
     //** Unmount the container filesystem **//
-    let proc_path = merge.join("proc");
+    let merge = &bento_config.merge;
+    let proc_path = &merge.join("proc");
     if proc_path.exists() {
-        umount(&proc_path).expect("Failed to Unmount /proc");
+        umount(proc_path).expect("Failed to Unmount /proc");
     }
-    if merge.join("app").exists() {
-        umount(&merge.join("app")).expect("Failed to Unmount APP");
+    if !bento_config.mount.as_os_str().is_empty() {
+        let bind_mount = &merge.join(&bento_config.mount);
+        if bind_mount.exists() {
+            umount(bind_mount).expect("Failed to unmount user defined mount");
+        }
     }
     if merge.exists() {
         umount(merge).expect("Failed to Unmount");
     }
+    Ok(())
 }
-
 fn _clean_up(container_dir: &PathBuf) {
     fs::remove_dir_all(container_dir).expect("Failed to remove dir");
 }
@@ -370,6 +377,7 @@ pub fn stop(name: &str, container: &Container) -> Result<()> {
                     }
                 }
                 thread::sleep(Duration::from_millis(200));
+
                 return Ok(());
             }
             Err(e) => return Err(e),
@@ -383,7 +391,9 @@ pub fn kill_proc(container: &Container) -> Result<()> {
     if let Some(c_pid) = container.pid {
         let pid = Pid::from_raw(c_pid);
         match apply_signal(pid, Signal::SIGKILL) {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                return Ok(());
+            }
             Err(e) => return Err(e),
         }
     } else {
@@ -436,6 +446,10 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
         match unsafe { fork() } {
             Ok(ForkResult::Parent { child }) => {
                 waitpid(child, None)?;
+                // match unmount_and_clean_up(&bento_config) {
+                //     Ok(()) => eprintln!("Successfully unmounted container fs."),
+                //     Err(e) => eprint!("Unsuccessfully unmounted container fs: {}", e),
+                // } // Clean exit
                 return Ok(());
             }
             Ok(ForkResult::Child) => match chroot(&bento_config.merge) {
