@@ -25,6 +25,10 @@ pub enum Commands {
         /// Location of volume mount
         #[arg(short, long, value_name = "FILE")]
         mount: Option<PathBuf>,
+
+        /// Container default command override
+        #[arg(long, allow_hyphen_values = true, num_args = 1..)]
+        command: Option<Vec<String>>,
     },
     /// Starts a container with the data compiled in "create"
     Start {
@@ -55,7 +59,7 @@ pub enum Commands {
     Exec {
         /// Name of the container to align with
         name: String,
-        /// Container args
+        /// Container command
         #[arg(allow_hyphen_values = true)]
         cmd: String,
         /// Container args

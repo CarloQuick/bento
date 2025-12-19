@@ -18,6 +18,7 @@ fn main() {
             image,
             mount,
             current_working_directory,
+            command,
         }) => {
             let cwd = match current_working_directory {
                 Some(c) => c,
@@ -28,7 +29,7 @@ fn main() {
                 None => &PathBuf::new(),
             };
 
-            match create(name, image, mount_dir, cwd) {
+            match create(name, image, mount_dir, cwd, command) {
                 Ok(_) => eprintln!("🍱 Bento Container {} finished", name),
                 Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
             };
