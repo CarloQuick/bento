@@ -446,10 +446,6 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
         match unsafe { fork() } {
             Ok(ForkResult::Parent { child }) => {
                 waitpid(child, None)?;
-                // match unmount_and_clean_up(&bento_config) {
-                //     Ok(()) => eprintln!("Successfully unmounted container fs."),
-                //     Err(e) => eprint!("Unsuccessfully unmounted container fs: {}", e),
-                // } // Clean exit
                 return Ok(());
             }
             Ok(ForkResult::Child) => match chroot(&bento_config.merge) {
