@@ -267,13 +267,11 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
         env.push(CString::new(e.to_owned()).unwrap());
     }
     match get_path_from_config(bento_config) {
-        Ok(path) => {
-            return (
-                CString::new(path).expect("Could not extract path for execve params"),
-                args,
-                env,
-            );
-        }
+        Ok(path) => (
+            CString::new(path).expect("Could not extract path for execve params"),
+            args,
+            env,
+        ),
         Err(e) => panic!("Could not return path from config: {}", e),
     }
 }
