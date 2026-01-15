@@ -145,6 +145,8 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                     chroot(&bento_config.merge).expect("Failed to chroot");
                     match std::env::set_current_dir(&bento_config.cwd) {
                         Ok(()) => {
+                            fs::create_dir_all("/proc")
+                                .expect("Failed to create /proc before mounting the process' proc");
                             mount(
                                 Some("proc"),
                                 "/proc",
