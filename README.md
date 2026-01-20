@@ -37,26 +37,31 @@ git clone https://github.com/CarloQuick/bento.git
 cd bento
 ```
 
-By default, bento containers are rootless, so you can create containers without given the process sudo permissions.
+By default, bento containers are rootless, so you can create containers without giving the process sudo permissions.
 
 ```bash
 cargo run -- create busybox-container busybox
 ```
 
-**Note:**
-This will create the container, but the current terminal will no longer be useful. There is no `pty` hooked up via the `fork()` therefore you will need to open a new terminal and `exec` into the container. Here you can do as you please inside the container.
+Check the container to see its status.
+
+```bash
+cargo run -- status busybox-container
+```
+
+**Note:** Bento doesn't yet implement PTY forwarding, so `start` will leave your terminal in a broken state. Open a second terminal before running `start`, then use `exec` to interact with the container.
 
 ```bash
 cargo run -- start busybox-container
 ```
 
-in a new terminal in the same directory
+In a new terminal in the same directory
 
 ```bash
 cargo run -- exec busybox-container ls -la
 ```
 
-to end the process, you can gracefull end or kill it by name.
+To end the process, you can gracefully end or kill it by name.
 
 ```bash
 cargo run -- stop busybox-container
