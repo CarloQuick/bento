@@ -16,9 +16,9 @@ Bento is an educational container runtime that implements core container isolati
 
 ## Tutorial
 
-Requires [Docker](https://www.docker.com/get-started/) to pull OCI compliant images
+Requires [Docker](https://www.docker.com/get-started/) to pull OCI-compliant images
 
-Make the directories to house all your bento containers and use docker to pull and tar images.
+Make the directories to house all your bento containers and use Docker to pull and tar images.
 
 The example below demonstrates creating a busybox container.
 
@@ -55,7 +55,7 @@ cargo run -- status busybox-container
 cargo run -- start busybox-container
 ```
 
-In a new terminal in the same directory
+In a new terminal in the same directory:
 
 ```bash
 cargo run -- exec busybox-container ls -la
