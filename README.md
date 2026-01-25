@@ -14,6 +14,12 @@ Bento is an educational container runtime that implements core container isolati
 - Manages container lifecycle (create, start, stop, kill, status, exec)
 - Provides process isolation and filesystem isolation
 
+**Note**
+
+> This demonstration uses the linux kernel.
+>
+> You'll need to be on a linux machine, linux vm, use wsl2, or in container with root privileges.
+
 ## Tutorial
 
 Requires [Docker](https://www.docker.com/get-started/) to pull OCI-compliant images
