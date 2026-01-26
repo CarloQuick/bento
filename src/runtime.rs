@@ -212,7 +212,8 @@ fn get_path_from_config(bento_config: &BentoConfigJson) -> Result<String> {
                 // hunt in the provided paths
                 path.push_str(cmd);
             } else {
-                let env_v = get_executable_paths(&bento_config.env);
+                let env_v = get_executable_paths(&bento_config.env)
+                    .context("Failed to get env from bento config.")?;
                 for e in env_v.iter() {
                     if Path::new(e).join(cmd).is_file() {
                         match PathBuf::from(e).join(cmd).to_str() {
@@ -267,7 +268,12 @@ fn get_path_from_cmd(
         // hunt in the provided paths
         path.push_str(cmd);
     } else {
-        let env_v = get_executable_paths(&bento_config.env);
+        let env_v = get_executable_paths(&bento_config.env).with_context(|| {
+            format!(
+                "Failed to convert arg: {:?} to a CString.",
+                &bento_config.env
+            )
+        })?;
         for e in env_v.iter() {
             if Path::new(e).join(cmd).is_file() {
                 match PathBuf::from(e).join(cmd).to_str() {
@@ -275,12 +281,16 @@ fn get_path_from_cmd(
                         path.push_str(p);
                         break;
                     }
-                    None => return Err(anyhow!("Failed to convert exec pathbuf to string")),
+                    None => return Err(anyhow!("Failed to convert exec pathbuf to string.")),
                 }
             }
         }
     }
-    Ok((CString::new(path)?, arg_v, env))
+    Ok((
+        CString::new(path).context("Failed to convert PATH to CString.")?,
+        arg_v,
+        env,
+    ))
 }
 
 fn get_execve_params(
@@ -300,9 +310,9 @@ fn get_execve_params(
         env.push(CString::new(e.to_owned()).unwrap());
     }
     let path =
-        get_path_from_config(bento_config).context("fFailed to get the bento config path")?;
+        get_path_from_config(bento_config).context("Failed to get the bento config path.")?;
 
-    let path = CString::new(path)?;
+    let path = CString::new(path).context("Failed to convert PATH to CString.")?;
     Ok((path, args, env))
 }
 
@@ -311,16 +321,20 @@ fn unmount_and_clean_up(bento_config: &BentoConfigJson) -> Result<()> {
     let merge = &bento_config.merge;
     let proc_path = &merge.join("proc");
     if proc_path.exists() {
-        umount(proc_path)?;
+        umount(proc_path)
+            .with_context(|| format!("Failed to unmount proc path at {}.", proc_path.display()))?;
     }
     if !bento_config.mount.as_os_str().is_empty() {
         let bind_mount = &merge.join(&bento_config.mount);
         if bind_mount.exists() {
-            umount(bind_mount)?;
+            umount(bind_mount).with_context(|| {
+                format!("Failed to unmount bind mount at {}.", bind_mount.display())
+            })?;
         }
     }
     if merge.exists() {
-        umount(merge)?;
+        umount(merge)
+            .with_context(|| format!("Failed to unmount merge mount at {}.", merge.display()))?;
     }
     Ok(())
 }
@@ -367,7 +381,7 @@ pub fn create(
 ) -> Result<()> {
     let (image, name) = &format_create_params(name, image);
     let (bento_images_env, bento_containers_env) =
-        &get_bento_envs().context("Failed to bento environmental variables")?;
+        &get_bento_envs().context("Failed to bento environmental variables.")?;
 
     let (new_bento_image_path, new_bento_container_path) =
         &create_container_dirs(bento_images_env, bento_containers_env, name, image);
@@ -385,12 +399,21 @@ pub fn create(
         user_cmd,
     );
 
-    json::add_to_container_manifest(&container_name, &created_container_path)?;
+    json::add_to_container_manifest(&container_name, &created_container_path).with_context(
+        || {
+            format!(
+                "Failed to add container {} to container at path: {}",
+                container_name,
+                created_container_path.display()
+            )
+        },
+    )?;
     Ok(())
 }
 
 fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
-    kill(pid, signal)?;
+    kill(pid, signal)
+        .with_context(|| format!("Failed to kill pid {} with signal {}", pid, signal))?;
     Ok(())
 }
 
@@ -407,7 +430,9 @@ pub fn stop(name: &str, container: &Container) -> Result<()> {
                                 if i < 10 {
                                     thread::sleep(time::Duration::from_secs(1));
                                 } else {
-                                    apply_signal(pid, Signal::SIGKILL)?;
+                                    apply_signal(pid, Signal::SIGKILL).with_context(|| {
+                                        format!("Failed to apply SIGKILL to pid {}", pid)
+                                    })?;
                                     return Ok(());
                                 }
                             }
@@ -462,19 +487,23 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
         if !uts_ns.exists() {
             return Err(anyhow!("Container process {} not found in /proc//uts", pid));
         }
-        let user_ns_file = File::open(user_ns)?;
-        let mount_ns_file = File::open(mount_ns)?;
-        let pid_ns_file = File::open(pid_ns)?;
-        let uts_ns_file = File::open(uts_ns)?;
+        let user_ns_file = File::open(user_ns).context("Failed to open namespace")?;
+        let mount_ns_file = File::open(mount_ns).context("Failed to open namespace")?;
+        let pid_ns_file = File::open(pid_ns).context("Failed to open namespace")?;
+        let uts_ns_file = File::open(uts_ns).context("Failed to open namespace")?;
 
         let borrowed_user_fd: BorrowedFd<'_> = user_ns_file.as_fd();
         let borrowed_mount_fd: BorrowedFd<'_> = mount_ns_file.as_fd();
         let borrowed_pid_fd: BorrowedFd<'_> = pid_ns_file.as_fd();
         let borrowed_uts_fd: BorrowedFd<'_> = uts_ns_file.as_fd();
-        setns(borrowed_user_fd, CloneFlags::CLONE_NEWUSER)?;
-        setns(borrowed_mount_fd, CloneFlags::CLONE_NEWNS)?;
-        setns(borrowed_pid_fd, CloneFlags::CLONE_NEWPID)?;
-        setns(borrowed_uts_fd, CloneFlags::CLONE_NEWUTS)?;
+        setns(borrowed_user_fd, CloneFlags::CLONE_NEWUSER)
+            .context("Failed to setns for user namespace")?;
+        setns(borrowed_mount_fd, CloneFlags::CLONE_NEWNS)
+            .context("Failed to setns for mount namespace")?;
+        setns(borrowed_pid_fd, CloneFlags::CLONE_NEWPID)
+            .context("Failed to setns for pid namespace")?;
+        setns(borrowed_uts_fd, CloneFlags::CLONE_NEWUTS)
+            .context("Failed to setns for uts namespace")?;
         let bento_config_path = get_bento_config_path(name)
             .with_context(|| format!("Container {} failed to get the bento config path", name))?;
         let bento_config = get_bento_config(&bento_config_path).with_context(|| {
@@ -487,7 +516,12 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
 
         match unsafe { fork() } {
             Ok(ForkResult::Parent { child }) => {
-                waitpid(child, None)?;
+                waitpid(child, None).with_context(|| {
+                    format!(
+                        "Container {} failed to wait for signal change in pid {}",
+                        name, &pid
+                    )
+                })?;
                 return Ok(());
             }
             Ok(ForkResult::Child) => match chroot(&bento_config.merge) {
@@ -521,10 +555,10 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
     }
 }
 
-pub fn get_executable_paths(env: &Vec<String>) -> Vec<&str> {
+pub fn get_executable_paths(env: &Vec<String>) -> Result<Vec<&str>> {
     let index = get_path_index(env);
     let v: Vec<&str> = env[index].split(":").collect();
-    v
+    Ok(v)
 }
 pub fn get_path_index(env: &Vec<String>) -> usize {
     for (_, e) in env.iter().enumerate() {
