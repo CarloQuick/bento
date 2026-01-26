@@ -28,24 +28,24 @@ fn unshare_user_namespace() -> Result<()> {
     let host_gid = nix::unistd::getgid();
     let uid_map = format!("0 {} 1", host_uid);
     let gid_map = format!("0 {} 1", host_gid);
-    unshare(CloneFlags::CLONE_NEWUSER).context("Failed to create user namespace")?;
+    unshare(CloneFlags::CLONE_NEWUSER).context("Failed to create user namespace.")?;
 
-    std::fs::write("/proc/self/uid_map", uid_map).context("Failed to write to uid")?;
+    std::fs::write("/proc/self/uid_map", uid_map).context("Failed to write to uid.")?;
 
     let pid = getpid();
     let pid = pid.as_raw();
     let path = PathBuf::from("/proc")
         .join(pid.to_string())
         .join("setgroups");
-    std::fs::write(path, "deny").context("Failed to write to gid")?;
+    std::fs::write(path, "deny").context("Failed to write to gid.")?;
 
-    std::fs::write("/proc/self/gid_map", gid_map).context("Failed to write to gid")?;
+    std::fs::write("/proc/self/gid_map", gid_map).context("Failed to write to gid.")?;
 
     Ok(())
 }
 fn unshare_mount_namespace() -> Result<()> {
     // //** Create mount namespace (isolates your filesystem operations) **//
-    unshare(CloneFlags::CLONE_NEWNS).context("Failed to create a mounted namespace")?;
+    unshare(CloneFlags::CLONE_NEWNS).context("Failed to create a mounted namespace.")?;
 
     Ok(())
 }
@@ -127,26 +127,26 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                 );
                 process::exit(1);
             }
-            unshare(CloneFlags::CLONE_NEWPID).context("Failed to create a PID namespace")?;
+            unshare(CloneFlags::CLONE_NEWPID).context("Failed to create a PID namespace.")?;
             //** UTS namespace **//
-            unshare(CloneFlags::CLONE_NEWUTS).context("Failed to create uts namespace")?;
+            unshare(CloneFlags::CLONE_NEWUTS).context("Failed to create uts namespace.")?;
 
             match unsafe { fork() } {
                 Ok(ForkResult::Parent { child }) => {
                     let child_pid = child.as_raw();
                     json::update_container_status(name, Some(child_pid), json::State::Running)
                         .with_context(|| {
-                            format!("Failed to change container {} status to Running", &name)
+                            format!("Failed to change container {} status to Running.", &name)
                         })?;
 
                     waitpid(child, None).with_context(|| {
                         format!(
-                            "Failed to recieve a change of signal from child process: {} ",
+                            "Failed to recieve a change of signal from child process: {} .",
                             &child
                         )
                     })?;
                     json::update_container_status(name, None, json::State::Stopped).with_context(
-                        || format!("Failed to change container {} status to Stopped", &name),
+                        || format!("Failed to change container {} status to Stopped.", &name),
                     )?;
 
                     unmount_and_clean_up(&bento_config)
@@ -166,7 +166,7 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                     match std::env::set_current_dir(&bento_config.cwd) {
                         Ok(()) => {
                             fs::create_dir_all("/proc").context(
-                                "Failed to create /proc before mounting the process' proc",
+                                "Failed to create /proc before mounting the process' proc.",
                             )?;
                             mount(
                                 Some("proc"),
@@ -175,10 +175,10 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                                 MsFlags::empty(),
                                 None::<&[u8]>,
                             )
-                            .context("Failed to Mount /proc")?;
-                            sethostname(name).context("Failed to set the hostname")?;
+                            .context("Failed to Mount /proc.")?;
+                            sethostname(name).context("Failed to set the hostname.")?;
                             let (path, args, env) = get_execve_params(bento_config)
-                                .context("Faile to get PATH, ARGS, or ENV")?;
+                                .context("Faile to get PATH, ARGS, or ENV.")?;
                             match execve(&path, &args, &env) {
                                 Err(e) => {
                                     println!("execve failed: {}", e);
