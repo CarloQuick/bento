@@ -1,7 +1,7 @@
 use crate::config::{BentoConfigJson, get_bento_config};
 use crate::json::{Container, State};
 use crate::{extract, json};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use nix::mount::{mount, umount};
 use nix::sched::setns;
 use nix::sys::signal::Signal;
@@ -23,33 +23,33 @@ use std::time::Duration;
 use std::{env, fs};
 use std::{process, time};
 
-fn write_to_gid_setgroup() {
-    let pid = getpid();
-    let pid = pid.as_raw();
-    let mut path = PathBuf::new(); // Create an empty PathBuf
-    path.push("/proc");
-    path.push(pid.to_string());
-    // path.push("self");
-    path.push("setgroups");
-    std::fs::write(path, "deny").expect("Failed to write to gid");
-}
-
-fn unshare_user_namespace() {
+fn unshare_user_namespace() -> Result<()> {
     let host_uid = nix::unistd::getuid();
     let host_gid = nix::unistd::getgid();
     let uid_map = format!("0 {} 1", host_uid);
     let gid_map = format!("0 {} 1", host_gid);
-    unshare(CloneFlags::CLONE_NEWUSER).expect("Failed to create user namespace");
+    unshare(CloneFlags::CLONE_NEWUSER).context("Failed to create user namespace")?;
 
-    std::fs::write("/proc/self/uid_map", uid_map).expect("Failed to write to uid");
-    write_to_gid_setgroup();
-    std::fs::write("/proc/self/gid_map", gid_map).expect("Failed to write to gid");
+    std::fs::write("/proc/self/uid_map", uid_map).context("Failed to write to uid")?;
+
+    let pid = getpid();
+    let pid = pid.as_raw();
+    let path = PathBuf::from("/proc")
+        .join(pid.to_string())
+        .join("setgroups");
+    std::fs::write(path, "deny").context("Failed to write to gid")?;
+
+    std::fs::write("/proc/self/gid_map", gid_map).context("Failed to write to gid")?;
+
+    Ok(())
 }
-fn unshare_mount_namespace() {
+fn unshare_mount_namespace() -> Result<()> {
     // //** Create mount namespace (isolates your filesystem operations) **//
-    unshare(CloneFlags::CLONE_NEWNS).expect("Failed to create a mounted namespace");
+    unshare(CloneFlags::CLONE_NEWNS).context("Failed to create a mounted namespace")?;
+
+    Ok(())
 }
-fn mount_fs_overlay(bento_config: &BentoConfigJson) {
+fn mount_fs_overlay(bento_config: &BentoConfigJson) -> Result<()> {
     let mut lowerdir = String::new();
     for (i, dir) in bento_config.lowerdir.iter().enumerate() {
         if i == bento_config.lowerdir.len() - 1 {
@@ -72,16 +72,20 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
     let overlay_options = &overlay_options[..];
     let data = Some(overlay_options);
 
-    mount(Some("overlay"), &bento_config.merge, fstype, flags, data)
-        .expect("Failed to Mount Filesystem");
+    mount(Some("overlay"), &bento_config.merge, fstype, flags, data).with_context(|| {
+        format!(
+            "Failed to Mount Filesystem at target {} .",
+            &bento_config.merge.display()
+        )
+    })?;
 
     if !bento_config.mount.as_os_str().is_empty() {
-        println!("The PathBuf is empty!");
         let bind_mount = &bento_config.merge.join(&bento_config.mount);
         if !bind_mount.exists() {
-            fs::create_dir_all(&bind_mount).expect("Failed to create mount");
+            fs::create_dir_all(&bind_mount)
+                .with_context(|| format!("Failed to create mount at {}.", &bind_mount.display()))?;
         }
-        // Hardcoded until we add user/cli mount options.
+
         mount(
             Some(&bento_config.mount),
             bind_mount,
@@ -89,23 +93,26 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) {
             MsFlags::MS_BIND,
             None::<&[u8]>,
         )
-        .expect("Failed to Mount USER Filesystem");
+        .context("Failed to Mount USER Filesystem")?;
     }
+    Ok(())
 }
 
-pub fn get_bento_config_path(name: &str) -> PathBuf {
+pub fn get_bento_config_path(name: &str) -> Result<PathBuf> {
     let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
+        env::var("BENTO_CONTAINERS_PATH").context("Failed to get container path from .env")?;
     let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
     let bento_config_path = bento_container_path.join("bento_config.json");
-    bento_config_path
+    Ok(bento_config_path)
 }
 
-fn unshare_pid_and_uts_namespace() {
+fn unshare_pid_and_uts_namespace() -> Result<()> {
     //** Create PID namespace **//
-    unshare(CloneFlags::CLONE_NEWPID).expect("Failed to create a PID namespace");
+    unshare(CloneFlags::CLONE_NEWPID).context("Failed to create a PID namespace")?;
     //** UTS namespace **//
-    unshare(CloneFlags::CLONE_NEWUTS).expect("Failed to create uts namespace");
+    unshare(CloneFlags::CLONE_NEWUTS).context("Failed to create uts namespace")?;
+
+    Ok(())
 }
 fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()> {
     //** Fork into the namespace **//
@@ -300,17 +307,31 @@ fn _clean_up(container_dir: &PathBuf) {
     fs::remove_dir_all(container_dir).expect("Failed to remove dir");
 }
 
-pub fn start(name: &str) {
-    let bento_config_path = get_bento_config_path(name);
-    let bento_config =
-        get_bento_config(&bento_config_path).expect("Failed to load the bento_config.json");
+pub fn start(name: &str) -> Result<()> {
+    let bento_config_path =
+        get_bento_config_path(name).context("Failed to get bento config path.")?;
 
-    unshare_user_namespace(); // Get privileges
-    unshare_mount_namespace(); // Isolate filesystem
-    mount_fs_overlay(&bento_config); // Set up container root
-    if let Err(e) = fork_into_namespaces(&bento_config, name) {
-        eprintln!("Start failed: {}", e) // Clean exit
-    }
+    let bento_config = get_bento_config(&bento_config_path).with_context(|| {
+        format!(
+            "Container {} failed to load the bento_config.json at {}.",
+            name,
+            bento_config_path.display()
+        )
+    })?;
+    unshare_user_namespace().with_context(|| {
+        format!(
+            "Container {} failed to go rootless by unsharing user namespace.",
+            name
+        )
+    })?;
+    unshare_mount_namespace()
+        .with_context(|| format!("Container {} failed  to unshare mount namespace.", name))?;
+    mount_fs_overlay(&bento_config)
+        .with_context(|| format!("Container {} failed to unshare mount namespace.", name))?;
+    fork_into_namespaces(&bento_config, name)
+        .with_context(|| format!("Container {} faild to fork the process.", name))?;
+
+    Ok(())
 }
 
 pub fn create(
@@ -429,8 +450,15 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
         setns(borrowed_mount_fd, CloneFlags::CLONE_NEWNS)?;
         setns(borrowed_pid_fd, CloneFlags::CLONE_NEWPID)?;
         setns(borrowed_uts_fd, CloneFlags::CLONE_NEWUTS)?;
-        let bento_config_path = get_bento_config_path(name);
-        let bento_config = get_bento_config(&bento_config_path)?;
+        let bento_config_path = get_bento_config_path(name)
+            .with_context(|| format!("Container {} failed to get the bento config path", name))?;
+        let bento_config = get_bento_config(&bento_config_path).with_context(|| {
+            format!(
+                "Container {} failed to get the bento config at {}",
+                name,
+                &bento_config_path.display()
+            )
+        })?;
 
         match unsafe { fork() } {
             Ok(ForkResult::Parent { child }) => {
