@@ -246,13 +246,20 @@ fn get_path_from_cmd(
 ) -> Result<(CString, Vec<CString>, Vec<CString>)> {
     let mut env: Vec<CString> = Vec::new();
     let mut arg_v: Vec<CString> = Vec::new();
-    let cmd_c_str = CString::new(cmd.to_owned())?;
+    let cmd_c_str = CString::new(cmd.to_owned())
+        .with_context(|| format!("Failed to convert cmd: {} to a CString.", &cmd))?;
     arg_v.push(cmd_c_str);
     for arg in args.iter() {
-        arg_v.push(CString::new(arg.to_owned())?);
+        arg_v.push(
+            CString::new(arg.to_owned())
+                .with_context(|| format!("Failed to convert arg: {:?} to a CString.", &arg))?,
+        );
     }
     for e in bento_config.env.iter() {
-        env.push(CString::new(e.to_owned())?);
+        env.push(
+            CString::new(e.to_owned())
+                .with_context(|| format!("Failed to convert arg: {} to a CString.", &e))?,
+        );
     }
     let mut path = String::new();
 
