@@ -93,7 +93,12 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) -> Result<()> {
             MsFlags::MS_BIND,
             None::<&[u8]>,
         )
-        .context("Failed to Mount USER Filesystem")?;
+        .with_context(|| {
+            format!(
+                "Failed to Mount USER Filesystem at {}",
+                &bento_config.mount.display()
+            )
+        })?;
     }
     Ok(())
 }
@@ -106,14 +111,6 @@ pub fn get_bento_config_path(name: &str) -> Result<PathBuf> {
     Ok(bento_config_path)
 }
 
-fn unshare_pid_and_uts_namespace() -> Result<()> {
-    //** Create PID namespace **//
-    unshare(CloneFlags::CLONE_NEWPID).context("Failed to create a PID namespace")?;
-    //** UTS namespace **//
-    unshare(CloneFlags::CLONE_NEWUTS).context("Failed to create uts namespace")?;
-
-    Ok(())
-}
 fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()> {
     //** Fork into the namespace **//
     match unsafe { fork() } {
@@ -130,30 +127,47 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                 );
                 process::exit(1);
             }
-            unshare_pid_and_uts_namespace(); // Isolate processes
+            unshare(CloneFlags::CLONE_NEWPID).context("Failed to create a PID namespace")?;
+            //** UTS namespace **//
+            unshare(CloneFlags::CLONE_NEWUTS).context("Failed to create uts namespace")?;
 
             match unsafe { fork() } {
                 Ok(ForkResult::Parent { child }) => {
                     let child_pid = child.as_raw();
-                    json::update_container_status(name, Some(child_pid), json::State::Running)?;
+                    json::update_container_status(name, Some(child_pid), json::State::Running)
+                        .with_context(|| {
+                            format!("Failed to change container {} status to Running", &name)
+                        })?;
 
-                    waitpid(child, None)?;
-                    json::update_container_status(name, None, json::State::Stopped)?;
-                    match unmount_and_clean_up(&bento_config) {
-                        Ok(()) => eprintln!("Successfully unmounted container fs."),
-                        Err(e) => eprint!("Unsuccessfully unmounted container fs: {}", e),
-                    } // Clean exit
+                    waitpid(child, None).with_context(|| {
+                        format!(
+                            "Failed to recieve a change of signal from child process: {} ",
+                            &child
+                        )
+                    })?;
+                    json::update_container_status(name, None, json::State::Stopped).with_context(
+                        || format!("Failed to change container {} status to Stopped", &name),
+                    )?;
+
+                    unmount_and_clean_up(&bento_config)
+                        .with_context(|| format!("Failed to unmount container {}.", &name))?;
 
                     return Ok(());
                 }
                 Ok(ForkResult::Child) => {
                     // Child process continues its work as a daemon
                     //** In the child: chroot into the prepared directory **//
-                    chroot(&bento_config.merge).expect("Failed to chroot");
+                    chroot(&bento_config.merge).with_context(|| {
+                        format!(
+                            "Failed change root directory (chroot) at {}.",
+                            &bento_config.merge.display()
+                        )
+                    })?;
                     match std::env::set_current_dir(&bento_config.cwd) {
                         Ok(()) => {
-                            fs::create_dir_all("/proc")
-                                .expect("Failed to create /proc before mounting the process' proc");
+                            fs::create_dir_all("/proc").context(
+                                "Failed to create /proc before mounting the process' proc",
+                            )?;
                             mount(
                                 Some("proc"),
                                 "/proc",
@@ -161,9 +175,10 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                                 MsFlags::empty(),
                                 None::<&[u8]>,
                             )
-                            .expect("Failed to Mount /proc");
-                            sethostname(name).expect("Failed to set the hostname");
-                            let (path, args, env) = get_execve_params(bento_config);
+                            .context("Failed to Mount /proc")?;
+                            sethostname(name).context("Failed to set the hostname")?;
+                            let (path, args, env) = get_execve_params(bento_config)
+                                .context("Faile to get PATH, ARGS, or ENV")?;
                             match execve(&path, &args, &env) {
                                 Err(e) => {
                                     println!("execve failed: {}", e);
@@ -261,7 +276,9 @@ fn get_path_from_cmd(
     Ok((CString::new(path)?, arg_v, env))
 }
 
-fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, Vec<CString>) {
+fn get_execve_params(
+    bento_config: &BentoConfigJson,
+) -> Result<(CString, Vec<CString>, Vec<CString>)> {
     let mut args: Vec<CString> = Vec::new();
     let mut env: Vec<CString> = Vec::new();
     let cmds = if let Some(user_cmd) = &bento_config.user_cmd {
@@ -275,14 +292,11 @@ fn get_execve_params(bento_config: &BentoConfigJson) -> (CString, Vec<CString>, 
     for e in bento_config.env.iter() {
         env.push(CString::new(e.to_owned()).unwrap());
     }
-    match get_path_from_config(bento_config) {
-        Ok(path) => (
-            CString::new(path).expect("Could not extract path for execve params"),
-            args,
-            env,
-        ),
-        Err(e) => panic!("Could not return path from config: {}", e),
-    }
+    let path =
+        get_path_from_config(bento_config).context("fFailed to get the bento config path")?;
+
+    let path = CString::new(path)?;
+    Ok((path, args, env))
 }
 
 fn unmount_and_clean_up(bento_config: &BentoConfigJson) -> Result<()> {
@@ -303,8 +317,11 @@ fn unmount_and_clean_up(bento_config: &BentoConfigJson) -> Result<()> {
     }
     Ok(())
 }
-fn _clean_up(container_dir: &PathBuf) {
-    fs::remove_dir_all(container_dir).expect("Failed to remove dir");
+fn _clean_up(container_dir: &PathBuf) -> Result<()> {
+    fs::remove_dir_all(container_dir)
+        .with_context(|| format!("Failed to remove dir at {}.", container_dir.display()))?;
+
+    Ok(())
 }
 
 pub fn start(name: &str) -> Result<()> {
@@ -342,7 +359,8 @@ pub fn create(
     user_cmd: &Option<Vec<String>>,
 ) -> Result<()> {
     let (image, name) = &format_create_params(name, image);
-    let (bento_images_env, bento_containers_env) = &get_bento_envs();
+    let (bento_images_env, bento_containers_env) =
+        &get_bento_envs().context("Failed to bento environmental variables")?;
 
     let (new_bento_image_path, new_bento_container_path) =
         &create_container_dirs(bento_images_env, bento_containers_env, name, image);
@@ -516,14 +534,14 @@ fn format_create_params(name: &String, image: &String) -> (String, String) {
     let name = hyphen_for_colon(name);
     (image, name)
 }
-pub fn get_bento_envs() -> (String, String) {
+pub fn get_bento_envs() -> Result<(String, String)> {
     let bento_images_env: String =
-        env::var("BENTO_IMAGES_PATH").expect("Failed to get images path from .env");
+        env::var("BENTO_IMAGES_PATH").context("Failed to get images path from .env")?;
 
     let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
+        env::var("BENTO_CONTAINERS_PATH").context("Failed to get container path from .env")?;
 
-    (bento_images_env, bento_containers_env)
+    Ok((bento_images_env, bento_containers_env))
 }
 
 fn create_container_dirs(
