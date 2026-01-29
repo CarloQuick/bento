@@ -1,5 +1,5 @@
 use crate::config::{BentoConfigJson, get_bento_config};
-use crate::json::{Container, State};
+use crate::json::{Container, State, rollback_container_manifest};
 use crate::{extract, json};
 use anyhow::{Context, Result, anyhow};
 use nix::mount::{mount, umount};
@@ -390,24 +390,33 @@ pub fn create(
         rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
         panic!("Error: {}. unpacking image.", e)
     }
-    let (container_name, created_container_path) = json::create_bento_config(
+    // must return a result
+    let (container_name, created_container_path) = match json::create_bento_config(
         name,
         &new_bento_image_path,
         &new_bento_container_path,
         mount,
         cwd,
         user_cmd,
-    );
+    ) {
+        Ok((cont_name, cont_path)) => (cont_name, cont_path),
+        Err(e) => {
+            rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
+            panic!(
+                "Error create bento config: {}. Failed to create container {}.",
+                e, name
+            );
+        }
+    };
 
-    json::add_to_container_manifest(&container_name, &created_container_path).with_context(
-        || {
+    if let Err(e) = json::add_to_container_manifest(&container_name, &created_container_path) {
+        rollback_container_manifest(&container_name).with_context(|| {
             format!(
-                "Failed to add container {} to container at path: {}",
-                container_name,
-                created_container_path.display()
+                "Failed to rollback container manifest for {} on error: {}.",
+                container_name, e
             )
-        },
-    )?;
+        })?;
+    }
     Ok(())
 }
 

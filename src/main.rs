@@ -1,6 +1,7 @@
 extern crate dotenv;
 use std::path::PathBuf;
 
+use anyhow::{Result, anyhow};
 use bento::{
     bento_cli::{Cli, Commands},
     json::{self, State},
@@ -9,7 +10,7 @@ use bento::{
 use clap::Parser;
 use dotenv::dotenv;
 
-fn main() {
+fn main() -> Result<()> {
     dotenv().ok();
     let cli = Cli::parse();
     match &cli.command {
@@ -30,21 +31,22 @@ fn main() {
             };
 
             match create(name, image, mount_dir, cwd, command) {
-                Ok(_) => eprintln!("🍱 Bento Container {} finished", name),
-                Err(e) => panic!("Problem creating the bento manifest: {e:?}"),
+                Ok(_) => {
+                    eprintln!("🍱 Bento Container {} finished", name)
+                }
+                Err(e) => return Err(anyhow!("Container not found to update {}.", e)),
             };
         }
-        Some(Commands::Start { name }) => {
-            // Later we will access the image json
-            match json::check_existing_container(name) {
-                Some(_container) => {
-                    start(name);
-                }
-                None => {
-                    eprintln!("Sorry, {} is not an existing Bento container.", name);
+        Some(Commands::Start { name }) => match json::check_existing_container(name) {
+            Some(_container) => {
+                if let Err(e) = start(name) {
+                    anyhow::bail!("Starting {} failed! Error: {}.", name, e);
                 }
             }
-        }
+            None => {
+                anyhow::bail!("Sorry, {} is not an existing Bento container.", name);
+            }
+        },
         Some(Commands::Status { name, all }) => {
             if *all {
                 json::list_container_manifest();
@@ -94,4 +96,6 @@ fn main() {
         },
         None => {}
     }
+
+    Ok(())
 }
