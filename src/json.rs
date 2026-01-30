@@ -6,7 +6,7 @@ use crate::oci::{
 use core::panic;
 use std::fs::File;
 use std::io::Seek;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 extern crate dotenv;
 
 use anyhow::{Context, Result, anyhow};
@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
 use std::{
     collections::HashMap,
-    env,
     fs::OpenOptions,
     io::{Read, Write},
 };
@@ -267,16 +266,14 @@ pub fn update_container_status(
     Ok(())
 }
 
-pub fn list_container_manifest() {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
+pub fn list_container_manifest(container_manifest_path: &Path) {
+    // let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
 
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
+        .open(container_manifest_path)
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();

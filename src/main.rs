@@ -51,7 +51,10 @@ fn main() -> Result<()> {
         },
         Some(Commands::Status { name, all }) => {
             if *all {
-                json::list_container_manifest();
+                json::list_container_manifest(
+                    &env.bento_containers_env_path
+                        .join("container_manifest.json"),
+                );
             } else {
                 match name {
                     Some(n) => match json::check_existing_container(n, &env) {
