@@ -1,5 +1,4 @@
 use crate::config::{ImageLayers, create_bento_json};
-use crate::env::Env;
 use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
@@ -18,14 +17,14 @@ use std::{
     io::{Read, Write},
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Container {
     dir: String,
     pub state: State,
     pub pid: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum State {
     Creating,
     Created,
@@ -59,15 +58,14 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
         layers: image_layers,
     })
 }
-pub fn check_existing_container(name: &str, env: &Env) -> Option<Container> {
+pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<Container> {
+    let manifest_path = container_path.join("container_manifest.json");
+
     let mut container_manifest = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(
-            &env.bento_containers_env_path
-                .join("container_manifest.json"),
-        )
+        .open(&manifest_path)
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
@@ -99,8 +97,10 @@ pub fn print_named_container_state(name: &str, state: &State, pid: Option<i32>) 
 pub fn add_to_container_manifest(
     name: &str,
     dir: &PathBuf,
-    container_manifest_path: &PathBuf,
+    container_path: &PathBuf,
 ) -> Result<()> {
+    let container_manifest_path = container_path.join("container_manifest.json");
+
     let container = Container {
         dir: String::from(dir.to_string_lossy()),
         state: State::Created,
@@ -110,7 +110,7 @@ pub fn add_to_container_manifest(
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(container_manifest_path)
+        .open(&container_manifest_path)
         .with_context(|| {
             format!(
                 "Failed to open container manifest at {:?}.",
@@ -365,16 +365,52 @@ pub fn create_bento_config(
     Ok((container_name.to_string(), bento_container_path.to_owned()))
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use std::fs::{create_dir_all, remove_dir_all};
 
-//     #[test]
-//     fn true_is_true() {
-//         let env = Env {
-//             bento_image_env_path: "hi".to_string(),
-//             bento_containers_env_path: "sdf".to_string(),
-//         };
-//         assert_eq!(Env, type_name::env);
-//     }
-// }
+    use crate::env::Env;
+
+    use super::*;
+
+    #[test]
+    fn adds_new_container_to_manifest() {
+        let test_dir: PathBuf = PathBuf::from("/tmp/bento_test");
+        let _ = remove_dir_all(&test_dir);
+        create_dir_all(&test_dir).expect("Failed to create test dir");
+
+        if let Err(e) = add_to_container_manifest(
+            "test_container",
+            &PathBuf::from("/test_path".to_string()),
+            &test_dir,
+        ) {
+            if test_dir.exists() {
+                remove_dir_all(&test_dir).expect("Failed to remove test dir");
+            } else {
+                eprint!("{}", e);
+            }
+        };
+
+        let env = Env {
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from(&test_dir),
+        };
+
+        let res: Option<Container> =
+            check_existing_container("test_container", &env.bento_containers_env_path);
+
+        assert_eq!(
+            res,
+            Some(Container {
+                dir: "/test_path".to_string(),
+                state: State::Created,
+                pid: None
+            })
+        );
+        if test_dir.exists() {
+            remove_dir_all(&test_dir).expect("Failed to remove test dir");
+        } else {
+            eprint!("done");
+        }
+    }
+}

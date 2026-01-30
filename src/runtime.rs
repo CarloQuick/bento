@@ -438,8 +438,7 @@ pub fn create(
     if let Err(e) = json::add_to_container_manifest(
         &container_name,
         &created_container_path,
-        &env.bento_containers_env_path
-            .join("container_manifest.json"),
+        &env.bento_containers_env_path,
     ) {
         rollback_container_manifest(
             &container_name,
@@ -468,7 +467,9 @@ pub fn stop(name: &str, container: &Container, env: &Env) -> Result<()> {
         match apply_signal(pid, Signal::SIGTERM) {
             Ok(()) => {
                 for i in 1..=10 {
-                    if let Some(c) = json::check_existing_container(name, env) {
+                    if let Some(c) =
+                        json::check_existing_container(name, &env.bento_containers_env_path)
+                    {
                         match c.state {
                             State::Stopped => return Ok(()),
                             _ => {
