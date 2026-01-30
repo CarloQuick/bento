@@ -39,7 +39,7 @@ fn main() -> Result<()> {
                 Err(e) => return Err(anyhow!("Container not found to update {}.", e)),
             };
         }
-        Some(Commands::Start { name }) => match json::check_existing_container(name) {
+        Some(Commands::Start { name }) => match json::check_existing_container(name, &env) {
             Some(_container) => {
                 if let Err(e) = start(name) {
                     anyhow::bail!("Starting {} failed! Error: {}.", name, e);
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
                 json::list_container_manifest();
             } else {
                 match name {
-                    Some(n) => match json::check_existing_container(n) {
+                    Some(n) => match json::check_existing_container(n, &env) {
                         Some(container) => {
                             json::print_named_container_state(n, &container.state, container.pid);
                         }
@@ -66,8 +66,8 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Some(Commands::Stop { name }) => match json::check_existing_container(name) {
-            Some(container) => match stop(name, &container) {
+        Some(Commands::Stop { name }) => match json::check_existing_container(name, &env) {
+            Some(container) => match stop(name, &container, &env) {
                 Ok(()) => eprintln!("Container {} stopped successfully", name),
                 Err(e) => eprintln!("{:?}", e),
             },
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
                 eprintln!("Sorry, {} is not an existing Bento container.", name);
             }
         },
-        Some(Commands::Kill { name }) => match json::check_existing_container(name) {
+        Some(Commands::Kill { name }) => match json::check_existing_container(name, &env) {
             Some(container) => match kill_proc(&container) {
                 Ok(()) => eprintln!("Container {} killed successfully", name),
                 Err(e) => eprintln!("{:?}", e),
@@ -84,18 +84,20 @@ fn main() -> Result<()> {
                 eprintln!("Sorry, {} is not an existing Bento container.", name);
             }
         },
-        Some(Commands::Exec { name, cmd, args }) => match json::check_existing_container(name) {
-            Some(container) => match container.state {
-                State::Running => match exec(name, &container, cmd, args) {
-                    Ok(()) => eprintln!("exec successful"),
-                    Err(e) => eprintln!("{:?}", e),
+        Some(Commands::Exec { name, cmd, args }) => {
+            match json::check_existing_container(name, &env) {
+                Some(container) => match container.state {
+                    State::Running => match exec(name, &container, cmd, args) {
+                        Ok(()) => eprintln!("exec successful"),
+                        Err(e) => eprintln!("{:?}", e),
+                    },
+                    _ => eprintln!("Sorry, not a running container."),
                 },
-                _ => eprintln!("Sorry, not a running container."),
-            },
-            None => {
-                eprintln!("Sorry, {} is not an existing Bento container.", name);
+                None => {
+                    eprintln!("Sorry, {} is not an existing Bento container.", name);
+                }
             }
-        },
+        }
         None => {}
     }
 

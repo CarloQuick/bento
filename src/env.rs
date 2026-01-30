@@ -9,7 +9,7 @@ pub struct Env {
 }
 
 impl Env {
-    fn new(bento_image_env_path: String, bento_containers_env_path: String) -> Env {
+    pub fn new(bento_image_env_path: String, bento_containers_env_path: String) -> Env {
         Env {
             bento_image_env_path,
 

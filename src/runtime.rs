@@ -1,4 +1,5 @@
 use crate::config::{BentoConfigJson, get_bento_config};
+use crate::env::Env;
 use crate::json::{Container, State, rollback_container_manifest};
 use crate::{extract, json};
 use anyhow::{Context, Result, anyhow};
@@ -426,13 +427,13 @@ fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
     Ok(())
 }
 
-pub fn stop(name: &str, container: &Container) -> Result<()> {
+pub fn stop(name: &str, container: &Container, env: &Env) -> Result<()> {
     if let Some(c_pid) = container.pid {
         let pid = Pid::from_raw(c_pid);
         match apply_signal(pid, Signal::SIGTERM) {
             Ok(()) => {
                 for i in 1..=10 {
-                    if let Some(c) = json::check_existing_container(name) {
+                    if let Some(c) = json::check_existing_container(name, env) {
                         match c.state {
                             State::Stopped => return Ok(()),
                             _ => {

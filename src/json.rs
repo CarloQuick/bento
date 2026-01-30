@@ -1,4 +1,5 @@
 use crate::config::{ImageLayers, create_bento_json};
+use crate::env::Env;
 use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
@@ -59,12 +60,11 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
         layers: image_layers,
     })
 }
-pub fn check_existing_container(name: &str) -> Option<Container> {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
+pub fn check_existing_container(name: &str, env: &Env) -> Option<Container> {
+    let bento_container_path =
+        PathBuf::from(&env.bento_containers_env_path).join("container_manifest.json");
 
-    let mut file = OpenOptions::new()
+    let mut container_manifest = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
@@ -72,7 +72,8 @@ pub fn check_existing_container(name: &str) -> Option<Container> {
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
-    file.read_to_string(&mut json_contents)
+    container_manifest
+        .read_to_string(&mut json_contents)
         .expect("Failed to read contents to string");
 
     let result: HashMap<String, Container> = if json_contents.is_empty() {
