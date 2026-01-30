@@ -1,9 +1,10 @@
 extern crate dotenv;
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use bento::{
     bento_cli::{Cli, Commands},
+    env::Env,
     json::{self, State},
     runtime::{create, exec, kill_proc, start, stop},
 };
@@ -12,6 +13,7 @@ use dotenv::dotenv;
 
 fn main() -> Result<()> {
     dotenv().ok();
+    let env: Env = Env::get_env_vars().context("Failed to retrieve env variables.")?;
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Create {
