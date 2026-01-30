@@ -90,7 +90,7 @@ fn main() -> Result<()> {
         Some(Commands::Exec { name, cmd, args }) => {
             match json::check_existing_container(name, &env) {
                 Some(container) => match container.state {
-                    State::Running => match exec(name, &container, cmd, args) {
+                    State::Running => match exec(name, &container, cmd, args, &env) {
                         Ok(()) => eprintln!("exec successful"),
                         Err(e) => eprintln!("{:?}", e),
                     },

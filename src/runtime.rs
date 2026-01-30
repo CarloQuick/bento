@@ -104,13 +104,13 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) -> Result<()> {
     Ok(())
 }
 
-pub fn get_bento_config_path(name: &str) -> Result<PathBuf> {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").context("Failed to get container path from .env")?;
-    let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-    let bento_config_path = bento_container_path.join("bento_config.json");
-    Ok(bento_config_path)
-}
+// pub fn get_bento_config_path(name: &str) -> Result<PathBuf> {
+//     let bento_containers_env: String =
+//         env::var("BENTO_CONTAINERS_PATH").context("Failed to get container path from .env")?;
+//     let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
+//     let bento_config_path = bento_container_path.join("bento_config.json");
+//     Ok(bento_config_path)
+// }
 
 fn fork_into_namespaces(
     bento_config: &BentoConfigJson,
@@ -362,14 +362,16 @@ fn _clean_up(container_dir: &PathBuf) -> Result<()> {
 }
 
 pub fn start(name: &str, env: &Env) -> Result<()> {
-    let bento_config_path =
-        get_bento_config_path(name).context("Failed to get bento config path.")?;
+    let container_config_path = &env
+        .bento_containers_env_path
+        .join(name)
+        .join("bento_config.json");
 
-    let bento_config = get_bento_config(&bento_config_path).with_context(|| {
+    let bento_config = get_bento_config(&container_config_path).with_context(|| {
         format!(
             "Container {} failed to load the bento_config.json at {}.",
             name,
-            bento_config_path.display()
+            container_config_path.display()
         )
     })?;
     unshare_user_namespace().with_context(|| {
@@ -504,7 +506,13 @@ pub fn kill_proc(container: &Container) -> Result<()> {
     };
 }
 
-pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CString>) -> Result<()> {
+pub fn exec(
+    name: &String,
+    container: &Container,
+    cmd: &String,
+    args: &Vec<CString>,
+    env: &Env,
+) -> Result<()> {
     if let Some(pid) = container.pid {
         let container_proc: PathBuf = PathBuf::from("/proc").join(&pid.to_string()).join("ns");
         if !container_proc.exists() {
@@ -547,13 +555,17 @@ pub fn exec(name: &String, container: &Container, cmd: &String, args: &Vec<CStri
             .context("Failed to setns for pid namespace")?;
         setns(borrowed_uts_fd, CloneFlags::CLONE_NEWUTS)
             .context("Failed to setns for uts namespace")?;
-        let bento_config_path = get_bento_config_path(name)
-            .with_context(|| format!("Container {} failed to get the bento config path", name))?;
-        let bento_config = get_bento_config(&bento_config_path).with_context(|| {
+
+        let container_config_path = env
+            .bento_containers_env_path
+            .join("name")
+            .join("bento_config.json");
+
+        let bento_config = get_bento_config(&container_config_path).with_context(|| {
             format!(
                 "Container {} failed to get the bento config at {}",
                 name,
-                &bento_config_path.display()
+                &container_config_path.display()
             )
         })?;
 
