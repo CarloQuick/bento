@@ -1,15 +1,15 @@
 use anyhow::{Context, Result};
 
-use std::env;
+use std::{env, path::PathBuf};
 
 pub struct Env {
-    pub bento_image_env_path: String,
+    pub bento_image_env_path: PathBuf,
 
-    pub bento_containers_env_path: String,
+    pub bento_containers_env_path: PathBuf,
 }
 
 impl Env {
-    pub fn new(bento_image_env_path: String, bento_containers_env_path: String) -> Env {
+    pub fn new(bento_image_env_path: PathBuf, bento_containers_env_path: PathBuf) -> Env {
         Env {
             bento_image_env_path,
 
@@ -24,7 +24,10 @@ impl Env {
         let bento_containers_env_path: String =
             env::var("BENTO_CONTAINERS_PATH").context("Failed to get container path from .env")?;
 
-        let envs: Env = Env::new(bento_image_env_path, bento_containers_env_path);
+        let envs: Env = Env::new(
+            PathBuf::from(bento_image_env_path),
+            PathBuf::from(bento_containers_env_path),
+        );
 
         Ok(envs)
     }

@@ -61,14 +61,11 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
     })
 }
 pub fn check_existing_container(name: &str, env: &Env) -> Option<Container> {
-    let bento_container_path =
-        PathBuf::from(&env.bento_containers_env_path).join("container_manifest.json");
-
     let mut container_manifest = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
+        .open(&env.bento_containers_env_path)
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
@@ -371,3 +368,17 @@ pub fn create_bento_config(
     }
     Ok((container_name.to_string(), bento_container_path.to_owned()))
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+
+//     #[test]
+//     fn true_is_true() {
+//         let env = Env {
+//             bento_image_env_path: "hi".to_string(),
+//             bento_containers_env_path: "sdf".to_string(),
+//         };
+//         assert_eq!(Env, type_name::env);
+//     }
+// }
