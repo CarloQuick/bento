@@ -101,8 +101,6 @@ pub fn add_to_container_manifest(
     dir: &PathBuf,
     container_manifest_path: &PathBuf,
 ) -> Result<()> {
-    // let container_manifest_path = PathBuf::from(cont_dir).join("container_manifest.json");
-
     let container = Container {
         dir: String::from(dir.to_string_lossy()),
         state: State::Created,
@@ -225,11 +223,6 @@ pub fn update_container_status(
     new_state: State,
     container_manifest_path: &PathBuf,
 ) -> Result<()> {
-    // let bento_container_path = match get_container_manifest_path() {
-    //     Ok(path) => path,
-    //     Err(e) => return Err(anyhow!("Container not found to update {}.", e)),
-    // };
-
     // Open the container manifest with options
     let mut file = OpenOptions::new()
         .read(true)
@@ -267,8 +260,6 @@ pub fn update_container_status(
 }
 
 pub fn list_container_manifest(container_manifest_path: &Path) {
-    // let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
-
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
