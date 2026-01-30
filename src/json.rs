@@ -65,7 +65,10 @@ pub fn check_existing_container(name: &str, env: &Env) -> Option<Container> {
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&env.bento_containers_env_path)
+        .open(
+            &env.bento_containers_env_path
+                .join("container_manifest.json"),
+        )
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
@@ -94,16 +97,13 @@ pub fn print_named_container_state(name: &str, state: &State, pid: Option<i32>) 
     eprintln!("{:<15} | {:<10} | {:<10}", name, state.print(), pid_str);
 }
 
-pub fn get_container_manifest_path() -> Result<PathBuf> {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
-    Ok(bento_container_path)
-}
+pub fn add_to_container_manifest(
+    name: &str,
+    dir: &PathBuf,
+    container_manifest_path: &PathBuf,
+) -> Result<()> {
+    // let container_manifest_path = PathBuf::from(cont_dir).join("container_manifest.json");
 
-pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
-    let bento_container_path =
-        get_container_manifest_path().context("Failed to retrieve container manifest path.")?;
     let container = Container {
         dir: String::from(dir.to_string_lossy()),
         state: State::Created,
@@ -113,11 +113,11 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
+        .open(container_manifest_path)
         .with_context(|| {
             format!(
                 "Failed to open container manifest at {:?}.",
-                bento_container_path
+                container_manifest_path
             )
         })?;
 
@@ -144,33 +144,31 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&bento_container_path)
+        .open(&container_manifest_path)
         .context("Failed to open Container Manifest for writing.")?;
     let buf = to_string_pretty(&result)
         .context("Failed serialize string for container manifest JSON.")?;
     file.write_all(buf.as_bytes()).with_context(|| {
         format!(
             "Failed to write to container manifest at {:?}.",
-            bento_container_path
+            container_manifest_path
         )
     })?;
 
     Ok(())
 }
 
-pub fn rollback_container_manifest(name: &str) -> Result<()> {
-    let bento_container_path =
-        get_container_manifest_path().context("Failed to retrieve container manifest path.")?;
-
+pub fn rollback_container_manifest(name: &str, container_manifest_path: &PathBuf) -> Result<()> {
+    // let container_manifest_path = PathBuf::from(cont_dir).join("container_manifest.json");
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
+        .open(&container_manifest_path)
         .with_context(|| {
             format!(
                 "Failed to open container manifest at {:?}.",
-                bento_container_path
+                container_manifest_path
             )
         })?;
 
@@ -194,14 +192,14 @@ pub fn rollback_container_manifest(name: &str) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&bento_container_path)
+        .open(&container_manifest_path)
         .context("Failed to open Container Manifest for writing.")?;
     let buf = to_string_pretty(&result)
         .context("Failed serialize string for container manifest JSON.")?;
     file.write_all(buf.as_bytes()).with_context(|| {
         format!(
             "Failed to write to container manifest at {:?}.",
-            bento_container_path
+            container_manifest_path
         )
     })?;
 
@@ -222,19 +220,29 @@ pub fn get_map_from_json(mut file: &File) -> Result<HashMap<String, Container>> 
     Ok(result)
 }
 
-pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) -> Result<()> {
-    let bento_container_path = match get_container_manifest_path() {
-        Ok(path) => path,
-        Err(e) => return Err(anyhow!("Container not found to update {}.", e)),
-    };
+pub fn update_container_status(
+    name: &str,
+    pid: Option<i32>,
+    new_state: State,
+    container_manifest_path: &PathBuf,
+) -> Result<()> {
+    // let bento_container_path = match get_container_manifest_path() {
+    //     Ok(path) => path,
+    //     Err(e) => return Err(anyhow!("Container not found to update {}.", e)),
+    // };
 
     // Open the container manifest with options
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
-        .with_context(|| format!("Failed to open manifest at: {:?} .", &bento_container_path))?;
+        .open(container_manifest_path)
+        .with_context(|| {
+            format!(
+                "Failed to open manifest at: {:?} .",
+                container_manifest_path
+            )
+        })?;
 
     let mut result = get_map_from_json(&file)?;
 

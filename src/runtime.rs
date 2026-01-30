@@ -112,7 +112,11 @@ pub fn get_bento_config_path(name: &str) -> Result<PathBuf> {
     Ok(bento_config_path)
 }
 
-fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()> {
+fn fork_into_namespaces(
+    bento_config: &BentoConfigJson,
+    name: &str,
+    container_manifest_path: &PathBuf,
+) -> Result<()> {
     //** Fork into the namespace **//
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child: _ }) => {
@@ -135,10 +139,15 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
             match unsafe { fork() } {
                 Ok(ForkResult::Parent { child }) => {
                     let child_pid = child.as_raw();
-                    json::update_container_status(name, Some(child_pid), json::State::Running)
-                        .with_context(|| {
-                            format!("Failed to change container {} status to Running.", &name)
-                        })?;
+                    json::update_container_status(
+                        name,
+                        Some(child_pid),
+                        json::State::Running,
+                        container_manifest_path,
+                    )
+                    .with_context(|| {
+                        format!("Failed to change container {} status to Running.", &name)
+                    })?;
 
                     waitpid(child, None).with_context(|| {
                         format!(
@@ -146,9 +155,15 @@ fn fork_into_namespaces(bento_config: &BentoConfigJson, name: &str) -> Result<()
                             &child
                         )
                     })?;
-                    json::update_container_status(name, None, json::State::Stopped).with_context(
-                        || format!("Failed to change container {} status to Stopped.", &name),
-                    )?;
+                    json::update_container_status(
+                        name,
+                        None,
+                        json::State::Stopped,
+                        container_manifest_path,
+                    )
+                    .with_context(|| {
+                        format!("Failed to change container {} status to Stopped.", &name)
+                    })?;
 
                     unmount_and_clean_up(&bento_config)
                         .with_context(|| format!("Failed to unmount container {}.", &name))?;
@@ -346,7 +361,7 @@ fn _clean_up(container_dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn start(name: &str) -> Result<()> {
+pub fn start(name: &str, env: &Env) -> Result<()> {
     let bento_config_path =
         get_bento_config_path(name).context("Failed to get bento config path.")?;
 
@@ -367,8 +382,13 @@ pub fn start(name: &str) -> Result<()> {
         .with_context(|| format!("Container {} failed  to unshare mount namespace.", name))?;
     mount_fs_overlay(&bento_config)
         .with_context(|| format!("Container {} failed to unshare mount namespace.", name))?;
-    fork_into_namespaces(&bento_config, name)
-        .with_context(|| format!("Container {} faild to fork the process.", name))?;
+    fork_into_namespaces(
+        &bento_config,
+        name,
+        &env.bento_containers_env_path
+            .join("container_manifest.json"),
+    )
+    .with_context(|| format!("Container {} faild to fork the process.", name))?;
 
     Ok(())
 }
@@ -379,15 +399,18 @@ pub fn create(
     mount: &PathBuf,
     cwd: &PathBuf,
     user_cmd: &Option<Vec<String>>,
+    env: &Env,
 ) -> Result<()> {
     let (image, name) = &format_create_params(name, image);
-    let (bento_images_env, bento_containers_env) =
-        &get_bento_envs().context("Failed to bento environmental variables.")?;
 
-    let (new_bento_image_path, new_bento_container_path) =
-        &create_container_dirs(bento_images_env, bento_containers_env, name, image);
+    let (new_bento_image_path, new_bento_container_path) = &create_container_dirs(
+        &env.bento_image_env_path,
+        &env.bento_containers_env_path,
+        name,
+        image,
+    );
 
-    if let Err(e) = unpack_image(image, bento_images_env, new_bento_image_path) {
+    if let Err(e) = unpack_image(image, &env.bento_image_env_path, new_bento_image_path) {
         rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
         panic!("Error: {}. unpacking image.", e)
     }
@@ -410,8 +433,18 @@ pub fn create(
         }
     };
 
-    if let Err(e) = json::add_to_container_manifest(&container_name, &created_container_path) {
-        rollback_container_manifest(&container_name).with_context(|| {
+    if let Err(e) = json::add_to_container_manifest(
+        &container_name,
+        &created_container_path,
+        &env.bento_containers_env_path
+            .join("container_manifest.json"),
+    ) {
+        rollback_container_manifest(
+            &container_name,
+            &env.bento_containers_env_path
+                .join("container_manifest.json"),
+        )
+        .with_context(|| {
             format!(
                 "Failed to rollback container manifest for {} on error: {}.",
                 container_name, e
@@ -596,8 +629,8 @@ pub fn get_bento_envs() -> Result<(String, String)> {
 }
 
 fn create_container_dirs(
-    bento_images_env: &String,
-    bento_containers_env: &String,
+    bento_images_env: &PathBuf,
+    bento_containers_env: &PathBuf,
     name: &String,
     image: &String,
 ) -> (PathBuf, PathBuf) {
@@ -638,12 +671,12 @@ fn rollback_dirs(dirs: Vec<&PathBuf>) {
 
 fn unpack_image(
     image: &String,
-    bento_images_env: &String,
+    bento_image_env_path: &PathBuf,
     bento_image_path: &PathBuf,
 ) -> Result<(), std::io::Error> {
     let mut tar = String::from(image);
     tar.push_str(".tar");
-    let image_tar_path = PathBuf::from(&bento_images_env).join(&tar);
+    let image_tar_path = PathBuf::from(&bento_image_env_path).join(&tar);
     let res = extract::unpack_archive(&image_tar_path, &bento_image_path);
     res
 }

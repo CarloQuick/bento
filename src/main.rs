@@ -32,7 +32,7 @@ fn main() -> Result<()> {
                 None => &PathBuf::new(),
             };
 
-            match create(name, image, mount_dir, cwd, command) {
+            match create(name, image, mount_dir, cwd, command, &env) {
                 Ok(_) => {
                     eprintln!("🍱 Bento Container {} finished", name)
                 }
@@ -41,7 +41,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Start { name }) => match json::check_existing_container(name, &env) {
             Some(_container) => {
-                if let Err(e) = start(name) {
+                if let Err(e) = start(name, &env) {
                     anyhow::bail!("Starting {} failed! Error: {}.", name, e);
                 }
             }
