@@ -10,10 +10,15 @@ use bento::{
 };
 use clap::Parser;
 use dotenv::dotenv;
+use nix::NixPath;
 
 fn main() -> Result<()> {
     dotenv().ok();
     let env: Env = Env::get_env_vars().context("Failed to retrieve env variables.")?;
+    if env.bento_dir.is_empty() {
+        anyhow::bail!("Please set a base bento path in the .env file");
+    }
+
     let cli = Cli::parse();
     match &cli.command {
         Some(Commands::Create {
@@ -36,7 +41,7 @@ fn main() -> Result<()> {
                 Ok(_) => {
                     eprintln!("🍱 Bento Container {} finished", name)
                 }
-                Err(e) => return Err(anyhow!("Container not found to update {}.", e)),
+                Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
             };
         }
         Some(Commands::Start { name }) => {

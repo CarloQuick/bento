@@ -15,7 +15,7 @@ use nix::{
     unistd::{Pid, getpid},
 };
 use std::ffi::CString;
-use std::fs::File;
+use std::fs::{File, create_dir_all};
 use std::io::ErrorKind;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::path::{Path, PathBuf};
@@ -403,6 +403,13 @@ pub fn create(
     user_cmd: &Option<Vec<String>>,
     env: &Env,
 ) -> Result<()> {
+    create_dir_all(&env.bento_dir).with_context(|| {
+        format!(
+            "Create failed to access or create a new base container directory at {:?}.",
+            env.bento_dir
+        )
+    })?;
+
     let (image, name) = &format_create_params(name, image);
 
     let (new_bento_image_path, new_bento_container_path) = &create_container_dirs(
@@ -410,13 +417,24 @@ pub fn create(
         &env.bento_containers_env_path,
         name,
         image,
-    );
+    )
+    .with_context(|| {
+        format!(
+            "Faieled to create container directories at:\n\t{:?} / {:?}",
+            &env.bento_image_env_path, &env.bento_containers_env_path
+        )
+    })?;
 
-    if let Err(e) = unpack_image(image, &env.bento_image_env_path, new_bento_image_path) {
-        rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
-        panic!("Error: {}. unpacking image.", e)
+    if let Err(err) = unpack_image(image, &env.bento_image_env_path, new_bento_image_path) {
+        rollback_dirs(vec![new_bento_image_path, new_bento_container_path]).with_context(|| {
+            format!(
+                "Failed to rollback unpacked images and container folders at {:?}\n\t{}",
+                vec![new_bento_image_path, new_bento_container_path],
+                err
+            )
+        })?;
     }
-    // must return a result
+
     let (container_name, created_container_path) = match json::create_bento_config(
         name,
         &new_bento_image_path,
@@ -426,12 +444,17 @@ pub fn create(
         user_cmd,
     ) {
         Ok((cont_name, cont_path)) => (cont_name, cont_path),
-        Err(e) => {
-            rollback_dirs(vec![new_bento_image_path, new_bento_container_path]);
-            panic!(
-                "Error create bento config: {}. Failed to create container {}.",
-                e, name
-            );
+        Err(err) => {
+            rollback_dirs(vec![new_bento_image_path, new_bento_container_path]).with_context(
+                || {
+                    format!(
+                        "Failed to rollback unpacked images and container folders at {:?}\n\t{}",
+                        vec![new_bento_image_path, new_bento_container_path],
+                        err
+                    )
+                },
+            )?;
+            return Err(anyhow!("Container not found to update."));
         }
     };
 
@@ -643,33 +666,34 @@ fn create_container_dirs(
     bento_containers_env: &PathBuf,
     name: &String,
     image: &String,
-) -> (PathBuf, PathBuf) {
+) -> Result<(PathBuf, PathBuf)> {
     let new_bento_image_path = PathBuf::from(&bento_images_env).join(image);
     let new_bento_container_path = PathBuf::from(&bento_containers_env).join(name);
     if let Err(create_error) = fs::create_dir_all(&new_bento_image_path) {
-        if create_error.kind() == ErrorKind::AlreadyExists {
-            panic!("File already exists at: {:?}", new_bento_image_path);
-        } else {
-            println!("Rolling back bento_image dirs");
-            rollback_dirs(vec![&new_bento_image_path]);
-        }
-        panic!("Error: {}", create_error);
+        rollback_dirs(vec![&new_bento_image_path]).with_context(|| {
+            format!(
+                "Failed to rollback directories from {:?}\n\t{}",
+                vec![&new_bento_image_path],
+                create_error
+            )
+        })?;
     } else {
         if let Err(create_error) = fs::create_dir_all(&new_bento_container_path) {
-            if create_error.kind() == ErrorKind::AlreadyExists {
-                panic!("File already exists at: {:?}", new_bento_container_path);
-            } else {
-                println!("Rolling back bento_image dirs");
-                rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]);
-            }
-
-            panic!("Error: {}", create_error);
+            rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]).with_context(
+                || {
+                    format!(
+                        "Failed to rollback directories from {:?}\n\t{}",
+                        vec![&new_bento_image_path, &new_bento_container_path],
+                        create_error
+                    )
+                },
+            )?;
         }
     }
-    (new_bento_image_path, new_bento_container_path)
+    Ok((new_bento_image_path, new_bento_container_path))
 }
 
-fn rollback_dirs(dirs: Vec<&PathBuf>) {
+pub fn rollback_dirs(dirs: Vec<&PathBuf>) -> Result<()> {
     for dir in dirs.iter() {
         if let Err(remove_error) = fs::remove_dir(dir) {
             eprintln!("Error: {}. removing failed Image directory", remove_error)
@@ -677,6 +701,8 @@ fn rollback_dirs(dirs: Vec<&PathBuf>) {
             eprintln!("Removed {:?} after failed execution.", dir);
         }
     }
+
+    Ok(())
 }
 
 fn unpack_image(
@@ -698,6 +724,8 @@ pub fn hyphen_for_colon(image: &String) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::remove_dir_all;
+
     use super::*;
 
     #[test]
@@ -706,5 +734,29 @@ mod tests {
         let result = hyphen_for_colon(&image);
         let new_image = String::from("python-trixie");
         assert_eq!(result, new_image);
+    }
+    #[test]
+    fn rolling_back_dirs() -> Result<()> {
+        let imgs_dir: PathBuf = PathBuf::from("/tmp/images");
+        let containers_dir: PathBuf = PathBuf::from("/tmp/containers");
+        let _ = remove_dir_all(&imgs_dir);
+        let _ = remove_dir_all(&containers_dir);
+
+        create_dir_all(&imgs_dir).expect("Failed to create test image dir");
+        create_dir_all(&containers_dir).expect("Failed to create test image dir");
+
+        assert_eq!(imgs_dir.exists(), true);
+        assert_eq!(containers_dir.exists(), true);
+
+        rollback_dirs(vec![&imgs_dir, &containers_dir]).with_context(|| {
+            format!(
+                "Failed to rollback directories {:?}",
+                vec![&imgs_dir, &containers_dir]
+            )
+        })?;
+
+        assert_eq!(!imgs_dir.exists(), true);
+        assert_eq!(!containers_dir.exists(), true);
+        Ok(())
     }
 }
