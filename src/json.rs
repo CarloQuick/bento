@@ -259,7 +259,8 @@ pub fn update_container_status(
     Ok(())
 }
 
-pub fn list_container_manifest(container_manifest_path: &Path) {
+pub fn list_container_manifest(containers_path: &Path) {
+    let container_manifest_path = containers_path.join("container_manifest.json");
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)

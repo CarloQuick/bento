@@ -382,8 +382,11 @@ pub fn start(name: &str, env: &Env) -> Result<()> {
     })?;
     unshare_mount_namespace()
         .with_context(|| format!("Container {} failed  to unshare mount namespace.", name))?;
-    mount_fs_overlay(&bento_config)
-        .with_context(|| format!("Container {} failed to unshare mount namespace.", name))?;
+    if let Err(err) = mount_fs_overlay(&bento_config) {
+        unmount_and_clean_up(&bento_config)
+            .context("Failed to unmount and cleantup after failed start.")?;
+        return Err(anyhow!("Err: {}", err));
+    };
     fork_into_namespaces(
         &bento_config,
         name,
