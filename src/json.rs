@@ -395,6 +395,7 @@ mod tests {
         };
 
         let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
             bento_image_env_path: PathBuf::from("/test_image_path"),
             bento_containers_env_path: PathBuf::from(&test_dir),
         };
@@ -439,6 +440,7 @@ mod tests {
         };
 
         let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
             bento_image_env_path: PathBuf::from("/test_image_path"),
             bento_containers_env_path: PathBuf::from(&test_dir),
         };
