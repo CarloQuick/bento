@@ -440,17 +440,14 @@ pub fn create(
         &created_container_path,
         &env.bento_containers_env_path,
     ) {
-        rollback_container_manifest(
-            &container_name,
-            &env.bento_containers_env_path
-                .join("container_manifest.json"),
-        )
-        .with_context(|| {
-            format!(
-                "Failed to rollback container manifest for {} on error: {}.",
-                container_name, e
-            )
-        })?;
+        rollback_container_manifest(&container_name, &env.bento_containers_env_path).with_context(
+            || {
+                format!(
+                    "Failed to rollback container manifest for {} on error: {}.",
+                    container_name, e
+                )
+            },
+        )?;
     }
     Ok(())
 }

@@ -155,12 +155,12 @@ pub fn add_to_container_manifest(
     Ok(())
 }
 
-pub fn rollback_container_manifest(name: &str, container_manifest_path: &PathBuf) -> Result<()> {
-    // let container_manifest_path = PathBuf::from(cont_dir).join("container_manifest.json");
+pub fn rollback_container_manifest(name: &str, container_path: &PathBuf) -> Result<()> {
+    let container_manifest_path = container_path.join("container_manifest.json");
+    eprint!("path from rollback: {:?}", container_manifest_path);
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
-        .create(true) // Create the file if it doesn't exist
         .open(&container_manifest_path)
         .with_context(|| {
             format!(
@@ -375,7 +375,7 @@ mod tests {
 
     #[test]
     fn adds_new_container_to_manifest() {
-        let test_dir: PathBuf = PathBuf::from("/tmp/bento_test");
+        let test_dir: PathBuf = PathBuf::from("/tmp/bento_test1");
         let _ = remove_dir_all(&test_dir);
         create_dir_all(&test_dir).expect("Failed to create test dir");
 
@@ -387,7 +387,10 @@ mod tests {
             if test_dir.exists() {
                 remove_dir_all(&test_dir).expect("Failed to remove test dir");
             } else {
-                eprint!("{}", e);
+                eprint!(
+                    "Failed to removed the test directory after fauled addition to container manifest.{}",
+                    e
+                );
             }
         };
 
@@ -407,6 +410,59 @@ mod tests {
                 pid: None
             })
         );
+        if test_dir.exists() {
+            remove_dir_all(&test_dir).expect("Failed to remove test dir");
+        } else {
+            eprint!("done");
+        }
+    }
+    #[test]
+    fn rollsback_container_from_manifest() {
+        let test_dir: PathBuf = PathBuf::from("/tmp/bento_test2");
+        let _ = remove_dir_all(&test_dir);
+        create_dir_all(&test_dir).expect("Failed to create test dir");
+
+        let container_name = "test_container";
+
+        if let Err(e) = add_to_container_manifest(
+            container_name,
+            &PathBuf::from("/test_path".to_string()),
+            &test_dir,
+        ) {
+            if test_dir.exists() {
+                remove_dir_all(&test_dir).expect("Failed to remove test dir");
+            }
+            eprint!(
+                "Failed to removed the test directory after fauled addition to container manifest.{}",
+                e
+            );
+        };
+
+        let env = Env {
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from(&test_dir),
+        };
+
+        let test_container: Option<Container> =
+            check_existing_container("test_container", &env.bento_containers_env_path);
+
+        assert_eq!(
+            test_container,
+            Some(Container {
+                dir: "/test_path".to_string(),
+                state: State::Created,
+                pid: None
+            })
+        );
+
+        rollback_container_manifest(container_name, &env.bento_containers_env_path)
+            .expect("Failed to rollback container manifest.");
+
+        let test_container: Option<Container> =
+            check_existing_container("test_container", &env.bento_containers_env_path);
+
+        assert_eq!(test_container, None);
+
         if test_dir.exists() {
             remove_dir_all(&test_dir).expect("Failed to remove test dir");
         } else {
