@@ -1,5 +1,5 @@
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -72,18 +72,26 @@ pub fn get_config_path(digest: &str) -> Option<PathBuf> {
 }
 
 pub fn get_oci_index(index_json_path: &PathBuf) -> Result<OciIndex> {
-    let file = File::open(index_json_path).expect("Couldnt open Index.json");
+    let file = File::open(index_json_path)
+        .with_context(|| format!("Couldnt open Index.json at {}.", index_json_path.display()))?;
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
-    let a: OciIndex = serde_json::from_reader(reader)?;
+    let a: OciIndex = serde_json::from_reader(reader).with_context(|| {
+        format!(
+            "Failed to read OciIndex from: {}.",
+            index_json_path.display()
+        )
+    })?;
     Ok(a)
 }
 
 pub fn get_oci_manifest(manifest_path: &PathBuf) -> Result<OciManifest> {
-    let file = File::open(&manifest_path).expect("Couldnt open Index.json");
+    let file = File::open(&manifest_path)
+        .with_context(|| format!("Failed to find OciManifest at {}.", manifest_path.display()))?;
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
-    let a: OciManifest = serde_json::from_reader(reader)?;
+    let a: OciManifest = serde_json::from_reader(reader)
+        .with_context(|| format!("Failed to read OciManifest at {}.", manifest_path.display()))?;
     Ok(a)
 }
 
@@ -91,19 +99,27 @@ pub fn get_nested_manifest(
     tmp_path: &PathBuf,
     nested_index_json_path: &Option<PathBuf>,
     target_arch: &String,
-) -> Option<usize> {
+) -> Result<Option<usize>> {
     if let Some(nested_path) = nested_index_json_path {
-        let nested_json =
-            get_oci_index(&tmp_path.join(nested_path)).expect("Failed to get nested JSON");
-        for (i, manifest) in nested_json.manifests.iter().enumerate() {
-            if let Some(platform_arch) = &manifest.platform {
-                if platform_arch.architecture == *target_arch {
-                    return Some(i);
+        match get_oci_index(&tmp_path.join(nested_path)) {
+            Ok(nested) => {
+                for (i, manifest) in nested.manifests.iter().enumerate() {
+                    if let Some(platform_arch) = &manifest.platform {
+                        if platform_arch.architecture == *target_arch {
+                            return Ok(Some(i));
+                        }
+                    }
                 }
+            }
+            Err(err) => {
+                return Err(anyhow!(
+                    "Failed to find appropriate architecture for this machine.\n\t{}",
+                    err
+                ));
             }
         }
     }
-    None
+    Ok(None)
 }
 
 #[cfg(test)]

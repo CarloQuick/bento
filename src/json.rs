@@ -5,27 +5,26 @@ use crate::oci::{
 use core::panic;
 use std::fs::File;
 use std::io::Seek;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 extern crate dotenv;
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::to_string_pretty;
 use std::{
     collections::HashMap,
-    env,
     fs::OpenOptions,
     io::{Read, Write},
 };
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Container {
     dir: String,
     pub state: State,
     pub pid: Option<i32>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum State {
     Creating,
     Created,
@@ -59,20 +58,19 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
         layers: image_layers,
     })
 }
-pub fn check_existing_container(name: &str) -> Option<Container> {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
+pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<Container> {
+    let manifest_path = container_path.join("container_manifest.json");
 
-    let mut file = OpenOptions::new()
+    let mut container_manifest = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
+        .open(&manifest_path)
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
-    file.read_to_string(&mut json_contents)
+    container_manifest
+        .read_to_string(&mut json_contents)
         .expect("Failed to read contents to string");
 
     let result: HashMap<String, Container> = if json_contents.is_empty() {
@@ -96,15 +94,13 @@ pub fn print_named_container_state(name: &str, state: &State, pid: Option<i32>) 
     eprintln!("{:<15} | {:<10} | {:<10}", name, state.print(), pid_str);
 }
 
-pub fn get_container_manifest_path() -> PathBuf {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
-    bento_container_path
-}
+pub fn add_to_container_manifest(
+    name: &str,
+    dir: &PathBuf,
+    container_path: &PathBuf,
+) -> Result<()> {
+    let container_manifest_path = container_path.join("container_manifest.json");
 
-pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
-    let bento_container_path = get_container_manifest_path();
     let container = Container {
         dir: String::from(dir.to_string_lossy()),
         state: State::Created,
@@ -114,16 +110,22 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
-        .expect("Failed to open File with Options");
+        .open(&container_manifest_path)
+        .with_context(|| {
+            format!(
+                "Failed to open container manifest at {:?}.",
+                container_manifest_path
+            )
+        })?;
 
     let mut json_contents = String::new();
-    file.read_to_string(&mut json_contents)?;
+    file.read_to_string(&mut json_contents)
+        .context("Failed to read JSON from file.")?;
 
     let mut result: HashMap<String, Container> = if json_contents.is_empty() {
         HashMap::new() // Empty file? Start with empty HashMap
     } else {
-        serde_json::from_str(&json_contents)?
+        serde_json::from_str(&json_contents).context("Failed to return JSON contents.")?
     };
 
     let existing_container = result.get(name);
@@ -139,9 +141,63 @@ pub fn add_to_container_manifest(name: &str, dir: &PathBuf) -> Result<()> {
     let mut file = OpenOptions::new()
         .write(true)
         .truncate(true)
-        .open(&bento_container_path)?;
-    let buf = to_string_pretty(&result)?;
-    file.write_all(buf.as_bytes())?;
+        .open(&container_manifest_path)
+        .context("Failed to open Container Manifest for writing.")?;
+    let buf = to_string_pretty(&result)
+        .context("Failed serialize string for container manifest JSON.")?;
+    file.write_all(buf.as_bytes()).with_context(|| {
+        format!(
+            "Failed to write to container manifest at {:?}.",
+            container_manifest_path
+        )
+    })?;
+
+    Ok(())
+}
+
+pub fn rollback_container_manifest(name: &str, container_path: &PathBuf) -> Result<()> {
+    let container_manifest_path = container_path.join("container_manifest.json");
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&container_manifest_path)
+        .with_context(|| {
+            format!(
+                "Failed to open container manifest at {:?}.",
+                container_manifest_path
+            )
+        })?;
+
+    let mut json_contents = String::new();
+    file.read_to_string(&mut json_contents)
+        .context("Failed to read JSON from file.")?;
+
+    let mut result: HashMap<String, Container> = if json_contents.is_empty() {
+        HashMap::new() // Empty file? Start with empty HashMap
+    } else {
+        serde_json::from_str(&json_contents).context("Failed to return JSON contents.")?
+    };
+
+    let removed_container = result.remove(name);
+
+    match removed_container {
+        Some(_) => eprintln!("Removed container: {}", name),
+        None => {}
+    }
+
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&container_manifest_path)
+        .context("Failed to open Container Manifest for writing.")?;
+    let buf = to_string_pretty(&result)
+        .context("Failed serialize string for container manifest JSON.")?;
+    file.write_all(buf.as_bytes()).with_context(|| {
+        format!(
+            "Failed to write to container manifest at {:?}.",
+            container_manifest_path
+        )
+    })?;
 
     Ok(())
 }
@@ -160,15 +216,24 @@ pub fn get_map_from_json(mut file: &File) -> Result<HashMap<String, Container>> 
     Ok(result)
 }
 
-pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) -> Result<()> {
-    let bento_container_path = get_container_manifest_path();
-
+pub fn update_container_status(
+    name: &str,
+    pid: Option<i32>,
+    new_state: State,
+    container_manifest_path: &PathBuf,
+) -> Result<()> {
     // Open the container manifest with options
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)?;
+        .open(container_manifest_path)
+        .with_context(|| {
+            format!(
+                "Failed to open manifest at: {:?} .",
+                container_manifest_path
+            )
+        })?;
 
     let mut result = get_map_from_json(&file)?;
 
@@ -180,25 +245,26 @@ pub fn update_container_status(name: &str, pid: Option<i32>, new_state: State) -
         None => return Err(anyhow!("Container not found to update.")),
     }
 
-    file.rewind()?;
-    file.set_len(0)?;
+    file.rewind()
+        .context("Failed to rewind the container manifest.")?;
+    file.set_len(0)
+        .context("Failed to rewind the container manifest.")?;
 
-    let buf = to_string_pretty(&result)?;
-    file.write_all(buf.as_bytes())?;
+    let buf = to_string_pretty(&result)
+        .context("Failed to converst string to json format update the container manifest.")?;
+    file.write_all(buf.as_bytes())
+        .context("Failed to update the container manifest.")?;
 
     Ok(())
 }
 
-pub fn list_container_manifest() {
-    let bento_containers_env: String =
-        env::var("BENTO_CONTAINERS_PATH").expect("Failed to get container path from .env");
-    let bento_container_path = PathBuf::from(&bento_containers_env).join("container_manifest.json");
-
+pub fn list_container_manifest(containers_path: &Path) {
+    let container_manifest_path = containers_path.join("container_manifest.json");
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
         .create(true) // Create the file if it doesn't exist
-        .open(&bento_container_path)
+        .open(container_manifest_path)
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
@@ -244,7 +310,7 @@ pub fn create_bento_config(
     mount: &PathBuf,
     cwd: &PathBuf,
     user_cmd: &Option<Vec<String>>,
-) -> (String, PathBuf) {
+) -> Result<(String, PathBuf)> {
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
     let index_json = get_oci_index(&index_json_path).expect("Could not read from index.json");
@@ -254,47 +320,172 @@ pub fn create_bento_config(
         let nested_index_json_path = get_config_path(nested_digest);
         if let Some(nested_path) = &nested_index_json_path {
             let target_arch = return_cpu_architecture();
-            let arch_specific_manifest =
-                get_nested_manifest(&bento_image_path, &nested_index_json_path, &target_arch);
-            if let Some(index) = arch_specific_manifest {
-                // now that we have an index we want the nested index.json
-                let nested_json = get_oci_index(&bento_image_path.join(nested_path))
-                    .expect("Failed to get nested JSON");
-                let manifest_path_option = get_config_path(&nested_json.manifests[index].digest);
-                match manifest_path_option {
-                    None => panic!("No config"),
-                    Some(manifest_path) => {
-                        let full_manifest_path =
-                            PathBuf::from(&bento_image_path).join(&manifest_path);
-                        let manifest_json = get_oci_manifest(&full_manifest_path)
-                            .expect("Couldnt get the manifest.json");
-                        let image_layers = get_layers_from_manifest(manifest_json.layers)
-                            .expect("Failed to get image layers from manifest");
-                        let manifest_config_path_option =
-                            get_config_path(&manifest_json.config.digest);
-                        match manifest_config_path_option {
-                            None => panic!("No config"),
-                            Some(manifest_config_path) => {
-                                let full_manifest_config_path =
-                                    PathBuf::from(&bento_image_path).join(&manifest_config_path);
-                                create_bento_json(
-                                    container_name,
-                                    full_manifest_config_path,
-                                    bento_config_path,
-                                    image_layers,
-                                    &bento_image_path,
-                                    &bento_container_path,
-                                    mount,
-                                    cwd,
-                                    user_cmd,
-                                )
-                                .expect("Failed to create bento json");
-                            }
+
+            let arch_specific_manifest_index = match get_nested_manifest(
+                &bento_image_path,
+                &nested_index_json_path,
+                &target_arch,
+            ) {
+                Ok(Some(index)) => index,
+                Ok(None) => {
+                    return Err(anyhow!(
+                        "Failed to return image manifest for this machines' architecture: {}",
+                        target_arch
+                    ));
+                }
+                Err(err) => {
+                    return Err(anyhow!(
+                        "Failed to return image manifest for this machines' architecture: {}\n\tError: {}",
+                        target_arch,
+                        err
+                    ));
+                }
+            };
+
+            // now that we have an index we want the nested index.json
+            let nested_json = get_oci_index(&bento_image_path.join(nested_path))
+                .expect("Failed to get nested JSON");
+            let manifest_path_option =
+                get_config_path(&nested_json.manifests[arch_specific_manifest_index].digest);
+            match manifest_path_option {
+                None => panic!("No config"),
+                Some(manifest_path) => {
+                    let full_manifest_path = PathBuf::from(&bento_image_path).join(&manifest_path);
+                    let manifest_json = get_oci_manifest(&full_manifest_path)
+                        .expect("Couldnt get the manifest.json");
+                    let image_layers = get_layers_from_manifest(manifest_json.layers)
+                        .expect("Failed to get image layers from manifest");
+                    let manifest_config_path_option = get_config_path(&manifest_json.config.digest);
+                    match manifest_config_path_option {
+                        None => panic!("No config"),
+                        Some(manifest_config_path) => {
+                            let full_manifest_config_path =
+                                PathBuf::from(&bento_image_path).join(&manifest_config_path);
+                            create_bento_json(
+                                container_name,
+                                full_manifest_config_path,
+                                bento_config_path,
+                                image_layers,
+                                &bento_image_path,
+                                &bento_container_path,
+                                mount,
+                                cwd,
+                                user_cmd,
+                            )
+                            .expect("Failed to create bento json");
                         }
                     }
                 }
             }
         }
     }
-    (container_name.to_string(), bento_container_path.to_owned())
+    Ok((container_name.to_string(), bento_container_path.to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{create_dir_all, remove_dir_all};
+
+    use crate::env::Env;
+
+    use super::*;
+
+    #[test]
+    fn adds_new_container_to_manifest() {
+        let test_dir: PathBuf = PathBuf::from("/tmp/bento_test1");
+        let _ = remove_dir_all(&test_dir);
+        create_dir_all(&test_dir).expect("Failed to create test dir");
+
+        if let Err(e) = add_to_container_manifest(
+            "test_container",
+            &PathBuf::from("/test_path".to_string()),
+            &test_dir,
+        ) {
+            if test_dir.exists() {
+                remove_dir_all(&test_dir).expect("Failed to remove test dir");
+            } else {
+                eprint!(
+                    "Failed to removed the test directory after fauled addition to container manifest.{}",
+                    e
+                );
+            }
+        };
+
+        let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from(&test_dir),
+        };
+
+        let res: Option<Container> =
+            check_existing_container("test_container", &env.bento_containers_env_path);
+
+        assert_eq!(
+            res,
+            Some(Container {
+                dir: "/test_path".to_string(),
+                state: State::Created,
+                pid: None
+            })
+        );
+        if test_dir.exists() {
+            remove_dir_all(&test_dir).expect("Failed to remove test dir");
+        } else {
+            eprint!("done");
+        }
+    }
+    #[test]
+    fn rollsback_container_from_manifest() {
+        let test_dir: PathBuf = PathBuf::from("/tmp/bento_test2");
+        let _ = remove_dir_all(&test_dir);
+        create_dir_all(&test_dir).expect("Failed to create test dir");
+
+        let container_name = "test_container";
+
+        if let Err(e) = add_to_container_manifest(
+            container_name,
+            &PathBuf::from("/test_path".to_string()),
+            &test_dir,
+        ) {
+            if test_dir.exists() {
+                remove_dir_all(&test_dir).expect("Failed to remove test dir");
+            }
+            eprint!(
+                "Failed to removed the test directory after fauled addition to container manifest.{}",
+                e
+            );
+        };
+
+        let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from(&test_dir),
+        };
+
+        let test_container: Option<Container> =
+            check_existing_container("test_container", &env.bento_containers_env_path);
+
+        assert_eq!(
+            test_container,
+            Some(Container {
+                dir: "/test_path".to_string(),
+                state: State::Created,
+                pid: None
+            })
+        );
+
+        rollback_container_manifest(container_name, &env.bento_containers_env_path)
+            .expect("Failed to rollback container manifest.");
+
+        let test_container: Option<Container> =
+            check_existing_container("test_container", &env.bento_containers_env_path);
+
+        assert_eq!(test_container, None);
+
+        if test_dir.exists() {
+            remove_dir_all(&test_dir).expect("Failed to remove test dir");
+        } else {
+            eprint!("done");
+        }
+    }
 }
