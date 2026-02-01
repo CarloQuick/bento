@@ -436,6 +436,7 @@ pub fn create(
                 err
             )
         })?;
+        return Err(anyhow!("Failed to unpack the image: {}", image));
     }
 
     let (container_name, created_container_path) = match json::create_bento_config(
@@ -582,7 +583,7 @@ pub fn exec(
 
         let container_config_path = env
             .bento_containers_env_path
-            .join("name")
+            .join(name)
             .join("bento_config.json");
 
         let bento_config = get_bento_config(&container_config_path).with_context(|| {
@@ -698,7 +699,7 @@ fn create_container_dirs(
 
 pub fn rollback_dirs(dirs: Vec<&PathBuf>) -> Result<()> {
     for dir in dirs.iter() {
-        if let Err(remove_error) = fs::remove_dir(dir) {
+        if let Err(remove_error) = fs::remove_dir_all(dir) {
             eprintln!("Error: {}. removing failed Image directory", remove_error)
         } else {
             eprintln!("Removed {:?} after failed execution.", dir);
