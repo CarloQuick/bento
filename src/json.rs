@@ -157,7 +157,6 @@ pub fn add_to_container_manifest(
 
 pub fn rollback_container_manifest(name: &str, container_path: &PathBuf) -> Result<()> {
     let container_manifest_path = container_path.join("container_manifest.json");
-    eprint!("path from rollback: {:?}", container_manifest_path);
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
