@@ -1,5 +1,5 @@
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -99,22 +99,27 @@ pub fn get_nested_manifest(
     tmp_path: &PathBuf,
     nested_index_json_path: &Option<PathBuf>,
     target_arch: &String,
-) -> Option<usize> {
+) -> Result<Option<usize>> {
     if let Some(nested_path) = nested_index_json_path {
         match get_oci_index(&tmp_path.join(nested_path)) {
             Ok(nested) => {
                 for (i, manifest) in nested.manifests.iter().enumerate() {
                     if let Some(platform_arch) = &manifest.platform {
                         if platform_arch.architecture == *target_arch {
-                            return Some(i);
+                            return Ok(Some(i));
                         }
                     }
                 }
             }
-            Err(e) => return Err(e).ok(),
+            Err(err) => {
+                return Err(anyhow!(
+                    "Failed to find appropriate architecture for this machine.\n\t{}",
+                    err
+                ));
+            }
         }
     }
-    None
+    Ok(None)
 }
 
 #[cfg(test)]

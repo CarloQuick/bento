@@ -321,42 +321,59 @@ pub fn create_bento_config(
         let nested_index_json_path = get_config_path(nested_digest);
         if let Some(nested_path) = &nested_index_json_path {
             let target_arch = return_cpu_architecture();
-            let arch_specific_manifest =
-                get_nested_manifest(&bento_image_path, &nested_index_json_path, &target_arch);
-            if let Some(index) = arch_specific_manifest {
-                // now that we have an index we want the nested index.json
-                let nested_json = get_oci_index(&bento_image_path.join(nested_path))
-                    .expect("Failed to get nested JSON");
-                let manifest_path_option = get_config_path(&nested_json.manifests[index].digest);
-                match manifest_path_option {
-                    None => panic!("No config"),
-                    Some(manifest_path) => {
-                        let full_manifest_path =
-                            PathBuf::from(&bento_image_path).join(&manifest_path);
-                        let manifest_json = get_oci_manifest(&full_manifest_path)
-                            .expect("Couldnt get the manifest.json");
-                        let image_layers = get_layers_from_manifest(manifest_json.layers)
-                            .expect("Failed to get image layers from manifest");
-                        let manifest_config_path_option =
-                            get_config_path(&manifest_json.config.digest);
-                        match manifest_config_path_option {
-                            None => panic!("No config"),
-                            Some(manifest_config_path) => {
-                                let full_manifest_config_path =
-                                    PathBuf::from(&bento_image_path).join(&manifest_config_path);
-                                create_bento_json(
-                                    container_name,
-                                    full_manifest_config_path,
-                                    bento_config_path,
-                                    image_layers,
-                                    &bento_image_path,
-                                    &bento_container_path,
-                                    mount,
-                                    cwd,
-                                    user_cmd,
-                                )
-                                .expect("Failed to create bento json");
-                            }
+
+            let arch_specific_manifest_index = match get_nested_manifest(
+                &bento_image_path,
+                &nested_index_json_path,
+                &target_arch,
+            ) {
+                Ok(Some(index)) => index,
+                Ok(None) => {
+                    return Err(anyhow!(
+                        "Failed to return image manifest for this machines' architecture: {}",
+                        target_arch
+                    ));
+                }
+                Err(err) => {
+                    return Err(anyhow!(
+                        "Failed to return image manifest for this machines' architecture: {}\n\tError: {}",
+                        target_arch,
+                        err
+                    ));
+                }
+            };
+
+            // now that we have an index we want the nested index.json
+            let nested_json = get_oci_index(&bento_image_path.join(nested_path))
+                .expect("Failed to get nested JSON");
+            let manifest_path_option =
+                get_config_path(&nested_json.manifests[arch_specific_manifest_index].digest);
+            match manifest_path_option {
+                None => panic!("No config"),
+                Some(manifest_path) => {
+                    let full_manifest_path = PathBuf::from(&bento_image_path).join(&manifest_path);
+                    let manifest_json = get_oci_manifest(&full_manifest_path)
+                        .expect("Couldnt get the manifest.json");
+                    let image_layers = get_layers_from_manifest(manifest_json.layers)
+                        .expect("Failed to get image layers from manifest");
+                    let manifest_config_path_option = get_config_path(&manifest_json.config.digest);
+                    match manifest_config_path_option {
+                        None => panic!("No config"),
+                        Some(manifest_config_path) => {
+                            let full_manifest_config_path =
+                                PathBuf::from(&bento_image_path).join(&manifest_config_path);
+                            create_bento_json(
+                                container_name,
+                                full_manifest_config_path,
+                                bento_config_path,
+                                image_layers,
+                                &bento_image_path,
+                                &bento_container_path,
+                                mount,
+                                cwd,
+                                user_cmd,
+                            )
+                            .expect("Failed to create bento json");
                         }
                     }
                 }
