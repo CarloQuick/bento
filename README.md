@@ -41,6 +41,15 @@ Clone or fork the repo to create and start your first container.
 ```bash
 git clone https://github.com/CarloQuick/bento.git
 cd bento
+mv .env.example .env
+```
+
+In your `.env` file, you will find 3 entries. You only need to add the value for `BENTO_DIR`. Here will be the base location for containers an images.
+
+```sh
+BENTO_DIR=
+BENTO_IMAGES_PATH=${BENTO_DIR}/images
+BENTO_CONTAINERS_PATH=${BENTO_DIR}/containers
 ```
 
 By default, bento containers are rootless, so you can create containers without giving the process sudo permissions.
