@@ -6,7 +6,7 @@ use bento::{
     bento_cli::{Cli, Commands},
     env::Env,
     json::{self, State},
-    runtime::{create, exec, kill_proc, start, stop},
+    runtime::{create, exec, kill_container, start, stop},
 };
 use clap::Parser;
 use dotenv::dotenv;
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Kill { name }) => {
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(container) => match kill_proc(&container) {
+                Some(container) => match kill_container(&container) {
                     Ok(()) => eprintln!("Container {} killed successfully", name),
                     Err(e) => eprintln!("{:?}", e),
                 },

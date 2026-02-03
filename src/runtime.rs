@@ -489,6 +489,10 @@ fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
 }
 
 pub fn stop(name: &str, container: &Container, env: &Env) -> Result<()> {
+    if container.state != State::Running {
+        anyhow::bail!("Container not currently running.");
+    }
+
     if let Some(c_pid) = container.pid {
         let pid = Pid::from_raw(c_pid);
         match apply_signal(pid, Signal::SIGTERM) {
@@ -522,7 +526,10 @@ pub fn stop(name: &str, container: &Container, env: &Env) -> Result<()> {
     };
 }
 
-pub fn kill_proc(container: &Container) -> Result<()> {
+pub fn kill_container(container: &Container) -> Result<()> {
+    if container.state != State::Running {
+        anyhow::bail!("Container not currently running.");
+    }
     if let Some(c_pid) = container.pid {
         let pid = Pid::from_raw(c_pid);
         match apply_signal(pid, Signal::SIGKILL) {
@@ -788,5 +795,40 @@ mod tests {
             error.to_string(),
             "Container failed to start! Check its status."
         );
+    }
+    #[test]
+    fn container_must_be_running_to_stop() {
+        let container: Container = Container {
+            dir: String::from("temp"),
+            state: State::Stopped,
+            pid: None,
+        };
+        let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from("/test_container_path"),
+        };
+
+        let result = stop(&"container_name", &container, &env);
+
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "Container not currently running.");
+    }
+    #[test]
+    fn container_must_be_running_to_kill() {
+        let container: Container = Container {
+            dir: String::from("temp"),
+            state: State::Stopped,
+            pid: None,
+        };
+
+        let result = kill_container(&container);
+
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "Container not currently running.");
     }
 }
