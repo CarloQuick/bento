@@ -361,7 +361,10 @@ fn _clean_up(container_dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn start(name: &str, env: &Env) -> Result<()> {
+pub fn start(container: &Container, name: &str, env: &Env) -> Result<()> {
+    if container.state != State::Created || container.state != State::Stopped {
+        anyhow::bail!("Container failed to start! Check its status.");
+    }
     let container_config_path = &env
         .bento_containers_env_path
         .join(name)
@@ -762,5 +765,28 @@ mod tests {
         assert_eq!(!imgs_dir.exists(), true);
         assert_eq!(!containers_dir.exists(), true);
         Ok(())
+    }
+    #[test]
+    fn container_limited_from_starting_by_state() {
+        let container: Container = Container {
+            dir: String::from("temp"),
+            state: State::Running,
+            pid: None,
+        };
+        let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from("/test_container_path"),
+        };
+
+        let result = start(&container, &"container_name", &env);
+
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Container failed to start! Check its status."
+        );
     }
 }

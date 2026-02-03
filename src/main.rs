@@ -46,8 +46,8 @@ fn main() -> Result<()> {
         }
         Some(Commands::Start { name }) => {
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(_container) => {
-                    if let Err(e) = start(name, &env) {
+                Some(container) => {
+                    if let Err(e) = start(&container, name, &env) {
                         anyhow::bail!("Starting {} failed! Error: {}.", name, e);
                     }
                 }
