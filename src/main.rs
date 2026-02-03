@@ -6,7 +6,7 @@ use bento::{
     bento_cli::{Cli, Commands},
     env::Env,
     json::{self, State},
-    runtime::{create, exec, kill_proc, start, stop},
+    runtime::{create, exec, kill_container, start, stop},
 };
 use clap::Parser;
 use dotenv::dotenv;
@@ -27,27 +27,32 @@ fn main() -> Result<()> {
             mount,
             current_working_directory,
             command,
-        }) => {
-            let cwd = match current_working_directory {
-                Some(c) => c,
-                None => &PathBuf::from("/"),
-            };
-            let mount_dir = match mount {
-                Some(m) => m,
-                None => &PathBuf::new(),
-            };
+        }) => match json::check_existing_container(name, &env.bento_containers_env_path) {
+            Some(_) => {
+                anyhow::bail!("Container already exists!");
+            }
+            None => {
+                let cwd = match current_working_directory {
+                    Some(c) => c,
+                    None => &PathBuf::from("/"),
+                };
+                let mount_dir = match mount {
+                    Some(m) => m,
+                    None => &PathBuf::new(),
+                };
 
-            match create(name, image, mount_dir, cwd, command, &env) {
-                Ok(_) => {
-                    eprintln!("🍱 Bento Container {} finished", name)
-                }
-                Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
-            };
-        }
+                match create(name, image, mount_dir, cwd, command, &env) {
+                    Ok(_) => {
+                        eprintln!("🍱 Bento Container {} finished", name)
+                    }
+                    Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
+                };
+            }
+        },
         Some(Commands::Start { name }) => {
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(_container) => {
-                    if let Err(e) = start(name, &env) {
+                Some(container) => {
+                    if let Err(e) = start(&container, name, &env) {
                         anyhow::bail!("Starting {} failed! Error: {}.", name, e);
                     }
                 }
@@ -81,7 +86,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Stop { name }) => {
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(container) => match stop(name, &container, &env) {
+                Some(container) => match stop(&container, name, &env) {
                     Ok(()) => eprintln!("Container {} stopped successfully", name),
                     Err(e) => eprintln!("{:?}", e),
                 },
@@ -92,7 +97,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Kill { name }) => {
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(container) => match kill_proc(&container) {
+                Some(container) => match kill_container(&container) {
                     Ok(()) => eprintln!("Container {} killed successfully", name),
                     Err(e) => eprintln!("{:?}", e),
                 },

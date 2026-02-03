@@ -19,7 +19,7 @@ use std::{
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Container {
-    dir: String,
+    pub dir: String,
     pub state: State,
     pub pid: Option<i32>,
 }

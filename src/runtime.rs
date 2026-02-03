@@ -361,40 +361,43 @@ fn _clean_up(container_dir: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub fn start(name: &str, env: &Env) -> Result<()> {
-    let container_config_path = &env
-        .bento_containers_env_path
-        .join(name)
-        .join("bento_config.json");
+pub fn start(container: &Container, name: &str, env: &Env) -> Result<()> {
+    if container.state == State::Created || container.state == State::Stopped {
+        let container_config_path = &env
+            .bento_containers_env_path
+            .join(name)
+            .join("bento_config.json");
 
-    let bento_config = get_bento_config(&container_config_path).with_context(|| {
-        format!(
-            "Container {} failed to load the bento_config.json at {}.",
+        let bento_config = get_bento_config(&container_config_path).with_context(|| {
+            format!(
+                "Container {} failed to load the bento_config.json at {}.",
+                name,
+                container_config_path.display()
+            )
+        })?;
+        unshare_user_namespace().with_context(|| {
+            format!(
+                "Container {} failed to go rootless by unsharing user namespace.",
+                name
+            )
+        })?;
+        unshare_mount_namespace()
+            .with_context(|| format!("Container {} failed  to unshare mount namespace.", name))?;
+        if let Err(err) = mount_fs_overlay(&bento_config) {
+            unmount_and_clean_up(&bento_config)
+                .context("Failed to unmount and cleantup after failed start.")?;
+            return Err(anyhow!("Err: {}", err));
+        };
+        fork_into_namespaces(
+            &bento_config,
             name,
-            container_config_path.display()
+            &env.bento_containers_env_path
+                .join("container_manifest.json"),
         )
-    })?;
-    unshare_user_namespace().with_context(|| {
-        format!(
-            "Container {} failed to go rootless by unsharing user namespace.",
-            name
-        )
-    })?;
-    unshare_mount_namespace()
-        .with_context(|| format!("Container {} failed  to unshare mount namespace.", name))?;
-    if let Err(err) = mount_fs_overlay(&bento_config) {
-        unmount_and_clean_up(&bento_config)
-            .context("Failed to unmount and cleantup after failed start.")?;
-        return Err(anyhow!("Err: {}", err));
-    };
-    fork_into_namespaces(
-        &bento_config,
-        name,
-        &env.bento_containers_env_path
-            .join("container_manifest.json"),
-    )
-    .with_context(|| format!("Container {} faild to fork the process.", name))?;
-
+        .with_context(|| format!("Container {} faild to fork the process.", name))?;
+    } else {
+        anyhow::bail!("Container failed to start! Check its status.");
+    }
     Ok(())
 }
 
@@ -485,50 +488,58 @@ fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
     Ok(())
 }
 
-pub fn stop(name: &str, container: &Container, env: &Env) -> Result<()> {
-    if let Some(c_pid) = container.pid {
-        let pid = Pid::from_raw(c_pid);
-        match apply_signal(pid, Signal::SIGTERM) {
-            Ok(()) => {
-                for i in 1..=10 {
-                    if let Some(c) =
-                        json::check_existing_container(name, &env.bento_containers_env_path)
-                    {
-                        match c.state {
-                            State::Stopped => return Ok(()),
-                            _ => {
-                                if i < 10 {
-                                    thread::sleep(time::Duration::from_secs(1));
-                                } else {
-                                    apply_signal(pid, Signal::SIGKILL).with_context(|| {
-                                        format!("Failed to apply SIGKILL to pid {}", pid)
-                                    })?;
-                                    return Ok(());
+pub fn stop(container: &Container, name: &str, env: &Env) -> Result<()> {
+    if container.state == State::Running {
+        if let Some(c_pid) = container.pid {
+            let pid = Pid::from_raw(c_pid);
+            match apply_signal(pid, Signal::SIGTERM) {
+                Ok(()) => {
+                    for i in 1..=10 {
+                        if let Some(c) =
+                            json::check_existing_container(name, &env.bento_containers_env_path)
+                        {
+                            match c.state {
+                                State::Stopped => return Ok(()),
+                                _ => {
+                                    if i < 10 {
+                                        thread::sleep(time::Duration::from_secs(1));
+                                    } else {
+                                        apply_signal(pid, Signal::SIGKILL).with_context(|| {
+                                            format!("Failed to apply SIGKILL to pid {}", pid)
+                                        })?;
+                                        return Ok(());
+                                    }
                                 }
                             }
                         }
                     }
+                    thread::sleep(Duration::from_millis(200));
+                    return Ok(());
                 }
-                thread::sleep(Duration::from_millis(200));
-                return Ok(());
+                Err(e) => return Err(e),
             }
-            Err(e) => return Err(e),
-        }
+        } else {
+            return Err(anyhow!(ErrorKind::NotFound));
+        };
     } else {
-        return Err(anyhow!(ErrorKind::NotFound));
-    };
+        anyhow::bail!("Container not currently running.");
+    }
 }
 
-pub fn kill_proc(container: &Container) -> Result<()> {
-    if let Some(c_pid) = container.pid {
-        let pid = Pid::from_raw(c_pid);
-        match apply_signal(pid, Signal::SIGKILL) {
-            Ok(()) => return Ok(()),
-            Err(e) => return Err(e),
-        }
+pub fn kill_container(container: &Container) -> Result<()> {
+    if container.state == State::Running {
+        if let Some(c_pid) = container.pid {
+            let pid = Pid::from_raw(c_pid);
+            match apply_signal(pid, Signal::SIGKILL) {
+                Ok(()) => return Ok(()),
+                Err(e) => return Err(e),
+            }
+        } else {
+            return Err(anyhow!(ErrorKind::NotFound));
+        };
     } else {
-        return Err(anyhow!(ErrorKind::NotFound));
-    };
+        anyhow::bail!("Container not currently running.");
+    }
 }
 
 pub fn exec(
@@ -762,5 +773,63 @@ mod tests {
         assert_eq!(!imgs_dir.exists(), true);
         assert_eq!(!containers_dir.exists(), true);
         Ok(())
+    }
+    #[test]
+    fn container_limited_from_starting_by_state() {
+        let container: Container = Container {
+            dir: String::from("temp"),
+            state: State::Running,
+            pid: None,
+        };
+        let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from("/test_container_path"),
+        };
+
+        let result = start(&container, &"container_name", &env);
+
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Container failed to start! Check its status."
+        );
+    }
+    #[test]
+    fn container_must_be_running_to_stop() {
+        let container: Container = Container {
+            dir: String::from("temp"),
+            state: State::Stopped,
+            pid: None,
+        };
+        let env = Env {
+            bento_dir: PathBuf::from("/test_dir"),
+            bento_image_env_path: PathBuf::from("/test_image_path"),
+            bento_containers_env_path: PathBuf::from("/test_container_path"),
+        };
+
+        let result = stop(&container, &"container_name", &env);
+
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "Container not currently running.");
+    }
+    #[test]
+    fn container_must_be_running_to_kill() {
+        let container: Container = Container {
+            dir: String::from("temp"),
+            state: State::Stopped,
+            pid: None,
+        };
+
+        let result = kill_container(&container);
+
+        assert!(result.is_err());
+
+        let error = result.unwrap_err();
+        assert_eq!(error.to_string(), "Container not currently running.");
     }
 }
