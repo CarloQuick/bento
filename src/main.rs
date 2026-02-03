@@ -27,23 +27,28 @@ fn main() -> Result<()> {
             mount,
             current_working_directory,
             command,
-        }) => {
-            let cwd = match current_working_directory {
-                Some(c) => c,
-                None => &PathBuf::from("/"),
-            };
-            let mount_dir = match mount {
-                Some(m) => m,
-                None => &PathBuf::new(),
-            };
+        }) => match json::check_existing_container(name, &env.bento_containers_env_path) {
+            Some(_) => {
+                anyhow::bail!("Container already exists!");
+            }
+            None => {
+                let cwd = match current_working_directory {
+                    Some(c) => c,
+                    None => &PathBuf::from("/"),
+                };
+                let mount_dir = match mount {
+                    Some(m) => m,
+                    None => &PathBuf::new(),
+                };
 
-            match create(name, image, mount_dir, cwd, command, &env) {
-                Ok(_) => {
-                    eprintln!("🍱 Bento Container {} finished", name)
-                }
-                Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
-            };
-        }
+                match create(name, image, mount_dir, cwd, command, &env) {
+                    Ok(_) => {
+                        eprintln!("🍱 Bento Container {} finished", name)
+                    }
+                    Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
+                };
+            }
+        },
         Some(Commands::Start { name }) => {
             match json::check_existing_container(name, &env.bento_containers_env_path) {
                 Some(container) => {
