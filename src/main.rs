@@ -86,7 +86,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Stop { name }) => {
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(container) => match stop(name, &container, &env) {
+                Some(container) => match stop(&container, name, &env) {
                     Ok(()) => eprintln!("Container {} stopped successfully", name),
                     Err(e) => eprintln!("{:?}", e),
                 },
