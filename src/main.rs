@@ -11,13 +11,20 @@ use bento::{
 use clap::Parser;
 use dotenv::dotenv;
 use nix::NixPath;
-
+use tracing::error;
 fn main() -> Result<()> {
+    tracing_subscriber::fmt()
+        .pretty() // This is the key method
+        .init();
+
     dotenv().ok();
-    let env: Env = Env::get_env_vars().context("Failed to retrieve env variables.")?;
-    if env.bento_dir.is_empty() {
-        anyhow::bail!("Please set a base bento path in the .env file");
-    }
+    let env: Env = match Env::get_env_vars() {
+        Ok(env) => env,
+        Err(err) => {
+            error!("Failed to find .env file {}.", err);
+            anyhow::bail!("Please set a base bento path in the .env file");
+        }
+    };
 
     let cli = Cli::parse();
     match &cli.command {
