@@ -1,7 +1,5 @@
 extern crate dotenv;
-use std::path::PathBuf;
-
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use bento::{
     bento_cli::{Cli, Commands},
     env::Env,
@@ -10,13 +8,10 @@ use bento::{
 };
 use clap::Parser;
 use dotenv::dotenv;
-use nix::NixPath;
-use tracing::error;
-fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .pretty() // This is the key method
-        .init();
+use std::path::PathBuf;
+use tracing::{error, info, level_filters::LevelFilter};
 
+fn main() -> Result<()> {
     dotenv().ok();
     let env: Env = match Env::get_env_vars() {
         Ok(env) => env,
@@ -27,6 +22,16 @@ fn main() -> Result<()> {
     };
 
     let cli = Cli::parse();
+    let filter = match &cli.log {
+        Some(log_level) => log_level.to_level_filter(),
+        None => LevelFilter::INFO,
+    };
+
+    tracing_subscriber::fmt()
+        .without_time()
+        .with_max_level(filter)
+        .init();
+
     match &cli.command {
         Some(Commands::Create {
             name,
@@ -70,6 +75,7 @@ fn main() -> Result<()> {
         }
         Some(Commands::Status { name, all }) => {
             if *all {
+                info!("getting starus");
                 json::list_container_manifest(&env.bento_containers_env_path);
             } else {
                 match name {

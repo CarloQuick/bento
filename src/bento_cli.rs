@@ -1,11 +1,16 @@
 use std::{ffi::CString, path::PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+use tracing::level_filters::LevelFilter;
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
+
+    #[arg(short, value_enum, global = true)]
+    pub log: Option<LogLevel>,
 }
 
 #[derive(Subcommand)]
@@ -36,7 +41,7 @@ pub enum Commands {
         name: String,
     },
     /// Returns the status of the identified container
-    #[group(required = true, multiple = false)]
+    // #[group(required = true, multiple = false)]
     Status {
         /// Name of the already created container
         name: Option<String>,
@@ -66,4 +71,30 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         args: Vec<CString>,
     },
+}
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+pub enum LogLevel {
+    /// info
+    Info,
+    /// error
+    Error,
+    /// debug
+    Debug,
+    /// warn
+    Warn,
+    /// trace
+    Trace,
+}
+
+impl LogLevel {
+    pub fn to_level_filter(&self) -> LevelFilter {
+        let res = match self {
+            LogLevel::Error => LevelFilter::ERROR,
+            LogLevel::Warn => LevelFilter::WARN,
+            LogLevel::Info => LevelFilter::INFO,
+            LogLevel::Debug => LevelFilter::DEBUG,
+            LogLevel::Trace => LevelFilter::TRACE,
+        };
+        res
+    }
 }
