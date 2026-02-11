@@ -9,18 +9,11 @@ use bento::{
 use clap::Parser;
 use dotenv::dotenv;
 use std::path::PathBuf;
-use tracing::{error, info, level_filters::LevelFilter};
+use tracing::{info, level_filters::LevelFilter};
 
 fn main() -> Result<()> {
     dotenv().ok();
-    let env: Env = match Env::get_env_vars() {
-        Ok(env) => env,
-        Err(err) => {
-            error!("Failed to find .env file {}.", err);
-            anyhow::bail!("Please set a base bento path in the .env file");
-        }
-    };
-
+    let env: Env = Env::get_env_vars()?;
     let cli = Cli::parse();
     let filter = match &cli.log {
         Some(log_level) => log_level.to_level_filter(),
