@@ -57,7 +57,7 @@ fn main() -> Result<()> {
 
                 match create(name, image, mount_dir, cwd, command, &env) {
                     Ok(_) => {
-                        info!("🍱 Bento Container {} finished", name)
+                        eprintln!("🍱 Bento Container {} finished", name)
                     }
                     Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
                 };
@@ -77,11 +77,12 @@ fn main() -> Result<()> {
         }
         Some(Commands::Status { name, all }) => {
             if *all {
-                info!("getting starus");
+                info!("Looking for all container's status");
                 json::list_container_manifest(&env.bento_containers_env_path);
             } else {
                 match name {
                     Some(n) => {
+                        info!("Looking for {}'s status", n);
                         match json::check_existing_container(n, &env.bento_containers_env_path) {
                             Some(container) => {
                                 json::print_named_container_state(

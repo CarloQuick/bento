@@ -1,4 +1,5 @@
 use crate::config::{ImageLayers, create_bento_json};
+use crate::json;
 use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
@@ -16,6 +17,7 @@ use std::{
     fs::OpenOptions,
     io::{Read, Write},
 };
+use tracing::{debug, info};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Container {
@@ -59,7 +61,9 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
     })
 }
 pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<Container> {
+    info!("Checking for existing container");
     let manifest_path = container_path.join("container_manifest.json");
+    debug!("Checkig for existing container at: {:?}", manifest_path);
 
     let mut container_manifest = OpenOptions::new()
         .read(true)
@@ -74,14 +78,18 @@ pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<
         .expect("Failed to read contents to string");
 
     let result: HashMap<String, Container> = if json_contents.is_empty() {
+        debug!("Container manifest is empty.");
         HashMap::new() // Empty file? Start with empty HashMap
     } else {
         serde_json::from_str(&json_contents).expect("Failed to read json")
     };
+    debug!("Container manifest contents:\n{:#?}", result);
 
     if let Some(existing_container) = result.get(name) {
+        debug!("Existing container:\n{:#?}", existing_container);
         Some(existing_container.clone())
     } else {
+        debug!("Could not fine container by the name:{:?}", name);
         None
     }
 }
@@ -260,6 +268,10 @@ pub fn update_container_status(
 
 pub fn list_container_manifest(containers_path: &Path) {
     let container_manifest_path = containers_path.join("container_manifest.json");
+    debug!(
+        "Looking into container manifest at {:?}",
+        container_manifest_path
+    );
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -268,6 +280,7 @@ pub fn list_container_manifest(containers_path: &Path) {
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
+
     file.read_to_string(&mut json_contents)
         .expect("Failed to read contents to string");
 
@@ -277,12 +290,14 @@ pub fn list_container_manifest(containers_path: &Path) {
         serde_json::from_str(&json_contents).expect("Failed to read json")
     };
     if result.is_empty() {
+        debug!("Container manifest is empty!");
         eprintln!("No containers available.");
     } else {
-        for (k, v) in result.iter() {
-            eprintln!("{}", k);
-            eprintln!("==> {:?}", v.state)
-        }
+        debug!(
+            "Contents of container manifest has {} entries",
+            result.len()
+        );
+        println!("Contents of container manifest: \n{:#?}", result);
     }
 }
 
