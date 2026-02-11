@@ -35,13 +35,13 @@ impl Env {
         let bento_containers_env_path: String =
             env::var("BENTO_CONTAINERS_PATH").context("Failed to get container path from .env")?;
 
-        if PathBuf::from(&bento_dir).exists() {
+        if !PathBuf::from(&bento_dir).exists() {
             anyhow::bail!("BENTO_DIR is empty in the .env file!");
         }
-        if PathBuf::from(&bento_image_env_path).exists() {
+        if !PathBuf::from(&bento_image_env_path).exists() {
             anyhow::bail!("BENTO_IMAGES_PATH is empty in the .env file!");
         }
-        if PathBuf::from(&bento_containers_env_path).exists() {
+        if !PathBuf::from(&bento_containers_env_path).exists() {
             anyhow::bail!("BENTO_CONTAINERS_PATH is empty in the .env file!");
         }
 
