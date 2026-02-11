@@ -9,8 +9,11 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Commands>,
 
-    #[arg(short, value_enum, global = true)]
+    #[arg(short, long, value_enum, global = true)]
     pub log: Option<LogLevel>,
+
+    #[arg(short, long, global = true)]
+    pub verbose: bool,
 }
 
 #[derive(Subcommand)]

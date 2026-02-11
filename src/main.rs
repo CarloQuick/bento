@@ -15,9 +15,14 @@ fn main() -> Result<()> {
     dotenv().ok();
     let env: Env = Env::get_env_vars()?;
     let cli = Cli::parse();
-    let filter = match &cli.log {
-        Some(log_level) => log_level.to_level_filter(),
-        None => LevelFilter::INFO,
+
+    let filter = if cli.verbose {
+        LevelFilter::DEBUG
+    } else {
+        match &cli.log {
+            Some(log_level) => log_level.to_level_filter(),
+            None => LevelFilter::INFO,
+        }
     };
 
     tracing_subscriber::fmt()
