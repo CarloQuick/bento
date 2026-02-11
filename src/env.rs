@@ -1,6 +1,4 @@
 use anyhow::{Context, Result};
-use tracing::error;
-
 use std::{env, path::PathBuf};
 
 pub struct Env {

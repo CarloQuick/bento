@@ -1,5 +1,4 @@
 use crate::config::{ImageLayers, create_bento_json};
-use crate::json;
 use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
@@ -61,9 +60,8 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
     })
 }
 pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<Container> {
-    info!("Checking for existing container");
     let manifest_path = container_path.join("container_manifest.json");
-    debug!("Checkig for existing container at: {:?}", manifest_path);
+    debug!("Checking for existing container at: {:?}", manifest_path);
 
     let mut container_manifest = OpenOptions::new()
         .read(true)
@@ -89,7 +87,7 @@ pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<
         debug!("Existing container:\n{:#?}", existing_container);
         Some(existing_container.clone())
     } else {
-        debug!("Could not fine container by the name:{:?}", name);
+        debug!("Could not find container by the name:{:?}", name);
         None
     }
 }
@@ -297,7 +295,10 @@ pub fn list_container_manifest(containers_path: &Path) {
             "Contents of container manifest has {} entries",
             result.len()
         );
-        println!("Contents of container manifest: \n{:#?}", result);
+        for (k, v) in result.iter() {
+            eprintln!("{}", k);
+            eprintln!("==> {:?}", v.state);
+        }
     }
 }
 
