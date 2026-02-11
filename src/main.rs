@@ -9,7 +9,7 @@ use bento::{
 use clap::Parser;
 use dotenv::dotenv;
 use std::path::PathBuf;
-use tracing::{error, info, level_filters::LevelFilter};
+use tracing::{info, level_filters::LevelFilter};
 
 fn main() -> Result<()> {
     dotenv().ok();
