@@ -54,6 +54,7 @@ fn unshare_mount_namespace() -> Result<()> {
 fn mount_fs_overlay(bento_config: &BentoConfigJson) -> Result<()> {
     let mut lowerdir = String::new();
     for (i, dir) in bento_config.lowerdir.iter().enumerate() {
+        debug!("Adding: {} to lowerdir String.", dir);
         if i == bento_config.lowerdir.len() - 1 {
             lowerdir.push_str(dir);
         } else {
@@ -71,22 +72,26 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) -> Result<()> {
         bento_config.upperdir.display(),
         bento_config.workdir.display()
     );
+    debug!("Overlayfs optinos: {}", overlay_options);
     let overlay_options = &overlay_options[..];
     let data = Some(overlay_options);
 
+    debug!("Mounting merge fs at: {:?}", bento_config.merge);
     mount(Some("overlay"), &bento_config.merge, fstype, flags, data).with_context(|| {
         format!(
             "Failed to Mount Filesystem at target {} .",
             &bento_config.merge.display()
         )
     })?;
-
+    debug!("Successful [merge dir] mount operation.");
     if !bento_config.mount.as_os_str().is_empty() {
         let bind_mount = &bento_config.merge.join(&bento_config.mount);
         if !bind_mount.exists() {
+            debug!("Creating mount dir at: {:?}", bind_mount);
             fs::create_dir_all(&bind_mount)
                 .with_context(|| format!("Failed to create mount at {}.", &bind_mount.display()))?;
         }
+        debug!("Attempting to mount mount dir at {:?}", bind_mount);
 
         mount(
             Some(&bento_config.mount),
@@ -101,17 +106,10 @@ fn mount_fs_overlay(bento_config: &BentoConfigJson) -> Result<()> {
                 &bento_config.mount.display()
             )
         })?;
+        debug!("Successful [mount dir] mount operation.");
     }
     Ok(())
 }
-
-// pub fn get_bento_config_path(name: &str) -> Result<PathBuf> {
-//     let bento_containers_env: String =
-//         env::var("BENTO_CONTAINERS_PATH").context("Failed to get container path from .env")?;
-//     let bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-//     let bento_config_path = bento_container_path.join("bento_config.json");
-//     Ok(bento_config_path)
-// }
 
 fn fork_into_namespaces(
     bento_config: &BentoConfigJson,
@@ -121,22 +119,26 @@ fn fork_into_namespaces(
     //** Fork into the namespace **//
     match unsafe { fork() } {
         Ok(ForkResult::Parent { child: _ }) => {
+            debug!("Grandparent process exits.");
             return Ok(());
         }
         Ok(ForkResult::Child) => {
-            // Creates need session with the child the session leader.
-
+            debug!("First child / parent process attempts to set the session id.");
             if let Err(e) = setsid() {
-                eprintln!(
+                error!(
                     "Setsid() failed to make the child process session leader: {}",
                     e
                 );
                 process::exit(1);
             }
+            debug!("First child / parent process setsid() successful.");
+            debug!("First child / parent process unsharing pid namespace.");
             unshare(CloneFlags::CLONE_NEWPID).context("Failed to create a PID namespace.")?;
             //** UTS namespace **//
+            debug!("First child / parent process unsharing uts namespace.");
             unshare(CloneFlags::CLONE_NEWUTS).context("Failed to create uts namespace.")?;
 
+            debug!("Attempting second fork.");
             match unsafe { fork() } {
                 Ok(ForkResult::Parent { child }) => {
                     let child_pid = child.as_raw();
@@ -145,14 +147,12 @@ fn fork_into_namespaces(
                         Some(child_pid),
                         json::State::Running,
                         container_manifest_path,
-                    )
-                    .with_context(|| {
-                        format!("Failed to change container {} status to Running.", &name)
-                    })?;
+                    )?;
 
+                    debug!("Parent [1st Child] waiting for [2nd Child] process signal.");
                     waitpid(child, None).with_context(|| {
                         format!(
-                            "Failed to recieve a change of signal from child process: {} .",
+                            "Parent [1st Child] Failed to recieve a change of signal from child process: {} .",
                             &child
                         )
                     })?;
@@ -163,27 +163,35 @@ fn fork_into_namespaces(
                         container_manifest_path,
                     )
                     .with_context(|| {
-                        format!("Failed to change container {} status to Stopped.", &name)
+                        format!(
+                            "Parent [1st Child] Failed to change container {} status to Stopped.",
+                            &name
+                        )
                     })?;
 
-                    unmount_and_clean_up(&bento_config)
-                        .with_context(|| format!("Failed to unmount container {}.", &name))?;
+                    unmount_and_clean_up(&bento_config).with_context(|| {
+                        format!("Parent [1st Child] Failed to unmount container {}.", &name)
+                    })?;
 
                     return Ok(());
                 }
                 Ok(ForkResult::Child) => {
+                    debug!("[2nd Child] process working as a daemon.");
                     // Child process continues its work as a daemon
                     //** In the child: chroot into the prepared directory **//
+                    debug!("[2nd Child] chrooting to {:?}", &bento_config.merge);
                     chroot(&bento_config.merge).with_context(|| {
                         format!(
-                            "Failed change root directory (chroot) at {}.",
-                            &bento_config.merge.display()
+                            "[2nd Child] Failed to change root directory to {:?}.",
+                            &bento_config.merge
                         )
                     })?;
+                    debug!("[2nd Child] setting cwd to {:?}", &bento_config.cwd);
                     match std::env::set_current_dir(&bento_config.cwd) {
                         Ok(()) => {
+                            debug!("[2nd Child] mounting /proc");
                             fs::create_dir_all("/proc").context(
-                                "Failed to create /proc before mounting the process' proc.",
+                                "[2nd Child] Failed to create /proc before mounting the process' proc.",
                             )?;
                             mount(
                                 Some("proc"),
@@ -192,10 +200,13 @@ fn fork_into_namespaces(
                                 MsFlags::empty(),
                                 None::<&[u8]>,
                             )
-                            .context("Failed to Mount /proc.")?;
-                            sethostname(name).context("Failed to set the hostname.")?;
+                            .context("[2nd Child] Failed to Mount /proc.")?;
+                            debug!("[2nd Child] setting hostname: {}", name);
+                            sethostname(name).context("[2nd Child] Failed to set the hostname.")?;
                             let (path, args, env) = get_execve_params(bento_config)
-                                .context("Faile to get PATH, ARGS, or ENV.")?;
+                                .context("[2nd Child] Faild to get PATH, ARGS, or ENV.")?;
+
+                            debug!("[2nd Child] attempting execve.");
                             match execve(&path, &args, &env) {
                                 Err(e) => {
                                     println!("execve failed: {}", e);
@@ -313,6 +324,8 @@ fn get_path_from_cmd(
 fn get_execve_params(
     bento_config: &BentoConfigJson,
 ) -> Result<(CString, Vec<CString>, Vec<CString>)> {
+    debug!("Getting execve params.");
+
     let mut args: Vec<CString> = Vec::new();
     let mut env: Vec<CString> = Vec::new();
     let cmds = if let Some(user_cmd) = &bento_config.user_cmd {
@@ -321,49 +334,54 @@ fn get_execve_params(
         bento_config.cmd.clone()
     };
     for arg in cmds.iter() {
-        args.push(CString::new(arg.to_owned()).unwrap());
+        args.push(CString::new(arg.to_owned())?);
     }
     for e in bento_config.env.iter() {
-        env.push(CString::new(e.to_owned()).unwrap());
+        env.push(CString::new(e.to_owned())?);
     }
     let path =
         get_path_from_config(bento_config).context("Failed to get the bento config path.")?;
 
     let path = CString::new(path).context("Failed to convert PATH to CString.")?;
+    debug!(
+        "Results of getting execve params from bento config\n\tpath: {:?}\n\targs: {:#?}\n\tenv: {:#?}",
+        path, args, env
+    );
     Ok((path, args, env))
 }
 
 fn unmount_and_clean_up(bento_config: &BentoConfigJson) -> Result<()> {
+    debug!("Unmounting and cleaning up!");
     //** Unmount the container filesystem **//
     let merge = &bento_config.merge;
     let proc_path = &merge.join("proc");
     if proc_path.exists() {
+        debug!("Proc path found at: {:?}", proc_path);
         umount(proc_path)
             .with_context(|| format!("Failed to unmount proc path at {}.", proc_path.display()))?;
     }
     if !bento_config.mount.as_os_str().is_empty() {
         let bind_mount = &merge.join(&bento_config.mount);
         if bind_mount.exists() {
+            debug!("Unmounting bind mount at {:?}", bind_mount);
             umount(bind_mount).with_context(|| {
                 format!("Failed to unmount bind mount at {}.", bind_mount.display())
             })?;
         }
     }
+    debug!("Looking for merge dir.");
     if merge.exists() {
+        debug!("Unmounting merge at {:?}", merge);
         umount(merge)
             .with_context(|| format!("Failed to unmount merge mount at {}.", merge.display()))?;
     }
     Ok(())
 }
-fn _clean_up(container_dir: &PathBuf) -> Result<()> {
-    fs::remove_dir_all(container_dir)
-        .with_context(|| format!("Failed to remove dir at {}.", container_dir.display()))?;
-
-    Ok(())
-}
 
 pub fn start(container: &Container, name: &str, env: &Env) -> Result<()> {
+    debug!("Container's state: {:?}", container.state);
     if container.state == State::Created || container.state == State::Stopped {
+        debug!("Container eligible to start.");
         let container_config_path = &env
             .bento_containers_env_path
             .join(name)
@@ -376,19 +394,25 @@ pub fn start(container: &Container, name: &str, env: &Env) -> Result<()> {
                 container_config_path.display()
             )
         })?;
+        debug!("Contents of bento config: \n{:#?}", bento_config);
+
+        debug!("Unsharing user namespace");
         unshare_user_namespace().with_context(|| {
             format!(
                 "Container {} failed to go rootless by unsharing user namespace.",
                 name
             )
         })?;
+        debug!("Unsharing mount namespace");
         unshare_mount_namespace()
             .with_context(|| format!("Container {} failed  to unshare mount namespace.", name))?;
         if let Err(err) = mount_fs_overlay(&bento_config) {
+            error!("Failed to mount overlayfs");
             unmount_and_clean_up(&bento_config)
                 .context("Failed to unmount and cleantup after failed start.")?;
             return Err(anyhow!("Err: {}", err));
         };
+        debug!("Forking the process.");
         fork_into_namespaces(
             &bento_config,
             name,
@@ -620,7 +644,7 @@ pub fn exec(
                 &container_config_path.display()
             )
         })?;
-        debug!("Contents of bento config: \n{:?}", bento_config);
+        debug!("Contents of bento config: \n{:#?}", bento_config);
 
         debug!("Forking into processL at PID: {}", pid);
         match unsafe { fork() } {

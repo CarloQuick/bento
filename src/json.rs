@@ -229,6 +229,10 @@ pub fn update_container_status(
     container_manifest_path: &PathBuf,
 ) -> Result<()> {
     // Open the container manifest with options
+    debug!(
+        "Attempting to update container `{}`'s status:\n\tpid {:?}\n\tstate {:?}",
+        name, pid, new_state
+    );
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -242,7 +246,7 @@ pub fn update_container_status(
         })?;
 
     let mut result = get_map_from_json(&file)?;
-
+    debug!("Container manifest: contents: {:#?}", result);
     match result.get_mut(name) {
         Some(container) => {
             container.state = new_state;
@@ -250,14 +254,14 @@ pub fn update_container_status(
         }
         None => return Err(anyhow!("Container not found to update.")),
     }
-
+    debug!("Re-writing container manifest.");
     file.rewind()
         .context("Failed to rewind the container manifest.")?;
     file.set_len(0)
         .context("Failed to rewind the container manifest.")?;
 
     let buf = to_string_pretty(&result)
-        .context("Failed to converst string to json format update the container manifest.")?;
+        .context("Failed to convert string to json format update the container manifest.")?;
     file.write_all(buf.as_bytes())
         .context("Failed to update the container manifest.")?;
 
