@@ -16,7 +16,7 @@ use std::{
     fs::OpenOptions,
     io::{Read, Write},
 };
-use tracing::{debug, info};
+use tracing::debug;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Container {
