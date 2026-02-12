@@ -9,7 +9,7 @@ use bento::{
 use clap::Parser;
 use dotenv::dotenv;
 use std::path::PathBuf;
-use tracing::{info, level_filters::LevelFilter};
+use tracing::{debug, info, level_filters::LevelFilter};
 
 fn main() -> Result<()> {
     dotenv().ok();
@@ -112,9 +112,10 @@ fn main() -> Result<()> {
             }
         }
         Some(Commands::Kill { name }) => {
+            debug!("Attempting to kill container `{}`", name);
             match json::check_existing_container(name, &env.bento_containers_env_path) {
                 Some(container) => match kill_container(&container) {
-                    Ok(()) => info!("Container {} killed successfully", name),
+                    Ok(()) => println!("Container {} killed successfully", name),
                     Err(e) => anyhow::bail!("{:?}", e),
                 },
                 None => {

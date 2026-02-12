@@ -23,6 +23,7 @@ use std::thread;
 use std::time::Duration;
 use std::{env, fs};
 use std::{process, time};
+use tracing::{debug, error};
 
 fn unshare_user_namespace() -> Result<()> {
     let host_uid = nix::unistd::getuid();
@@ -489,17 +490,24 @@ fn apply_signal(pid: Pid, signal: Signal) -> Result<()> {
 }
 
 pub fn stop(container: &Container, name: &str, env: &Env) -> Result<()> {
+    debug!("Container's state: {:?}", container.state);
     if container.state == State::Running {
         if let Some(c_pid) = container.pid {
+            debug!("Running container's pid: {}", c_pid);
             let pid = Pid::from_raw(c_pid);
+            debug!("Applying SIGTERM signal.");
             match apply_signal(pid, Signal::SIGTERM) {
                 Ok(()) => {
+                    debug!("Running out 10 seconds.");
                     for i in 1..=10 {
                         if let Some(c) =
                             json::check_existing_container(name, &env.bento_containers_env_path)
                         {
                             match c.state {
-                                State::Stopped => return Ok(()),
+                                State::Stopped => {
+                                    debug!("Container effecively stopped at: {}s.", i);
+                                    return Ok(());
+                                }
                                 _ => {
                                     if i < 10 {
                                         thread::sleep(time::Duration::from_secs(1));
@@ -527,14 +535,18 @@ pub fn stop(container: &Container, name: &str, env: &Env) -> Result<()> {
 }
 
 pub fn kill_container(container: &Container) -> Result<()> {
+    debug!("Container's state: {:?}", container.state);
     if container.state == State::Running {
         if let Some(c_pid) = container.pid {
+            debug!("Running container's pid: {}", c_pid);
             let pid = Pid::from_raw(c_pid);
+            debug!("Applying SIGKILL signal.");
             match apply_signal(pid, Signal::SIGKILL) {
                 Ok(()) => return Ok(()),
                 Err(e) => return Err(e),
             }
         } else {
+            error!("Container does not have a functional PID");
             return Err(anyhow!(ErrorKind::NotFound));
         };
     } else {
