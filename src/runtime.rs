@@ -562,7 +562,9 @@ pub fn exec(
     env: &Env,
 ) -> Result<()> {
     if let Some(pid) = container.pid {
+        debug!("Container has active PID of {}", pid);
         let container_proc: PathBuf = PathBuf::from("/proc").join(&pid.to_string()).join("ns");
+        debug!("Looking inside {:?}", container_proc);
         if !container_proc.exists() {
             return Err(anyhow!("Container process {} not found in /proc", pid));
         }
@@ -595,6 +597,8 @@ pub fn exec(
         let borrowed_mount_fd: BorrowedFd<'_> = mount_ns_file.as_fd();
         let borrowed_pid_fd: BorrowedFd<'_> = pid_ns_file.as_fd();
         let borrowed_uts_fd: BorrowedFd<'_> = uts_ns_file.as_fd();
+
+        debug!("Attempting setns into container.");
         setns(borrowed_user_fd, CloneFlags::CLONE_NEWUSER)
             .context("Failed to setns for user namespace")?;
         setns(borrowed_mount_fd, CloneFlags::CLONE_NEWNS)
@@ -608,7 +612,7 @@ pub fn exec(
             .bento_containers_env_path
             .join(name)
             .join("bento_config.json");
-
+        debug!("Container config located at: {:?}", container_config_path);
         let bento_config = get_bento_config(&container_config_path).with_context(|| {
             format!(
                 "Container {} failed to get the bento config at {}",
@@ -616,7 +620,9 @@ pub fn exec(
                 &container_config_path.display()
             )
         })?;
+        debug!("Contents of bento config: \n{:?}", bento_config);
 
+        debug!("Forking into processL at PID: {}", pid);
         match unsafe { fork() } {
             Ok(ForkResult::Parent { child }) => {
                 waitpid(child, None).with_context(|| {
@@ -625,6 +631,7 @@ pub fn exec(
                         name, &pid
                     )
                 })?;
+                debug!("Exiting grandparent process.");
                 return Ok(());
             }
             Ok(ForkResult::Child) => match chroot(&bento_config.merge) {

@@ -124,6 +124,7 @@ fn main() -> Result<()> {
             }
         }
         Some(Commands::Exec { name, cmd, args }) => {
+            debug!("Attempting to apply exec to `{}`", name);
             match json::check_existing_container(name, &env.bento_containers_env_path) {
                 Some(container) => match container.state {
                     State::Running => match exec(name, &container, cmd, args, &env) {
@@ -137,7 +138,9 @@ fn main() -> Result<()> {
                 }
             }
         }
-        None => {}
+        None => {
+            debug!("Missing bento command.")
+        }
     }
 
     Ok(())
