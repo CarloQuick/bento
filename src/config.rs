@@ -1,10 +1,11 @@
 use crate::extract;
 use crate::oci::OciImageConfig;
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use serde_json::{Result, to_writer_pretty};
+use serde_json::to_writer_pretty;
+use tracing::{debug, info};
 use std::fs::{File, create_dir};
 use std::io::{BufReader, BufWriter, Write};
-use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -62,10 +63,10 @@ impl BentoConfigJson {
         }
     }
 }
-pub fn create_bento_json<P: AsRef<Path>>(
+pub fn create_bento_json(
     name: &String,
-    read_path: P,
-    write_path: P,
+    read_path: &PathBuf,
+    write_path: &PathBuf,
     image_layers: ImageLayers,
     image_path: &PathBuf,
     container_path: &PathBuf,
@@ -73,13 +74,16 @@ pub fn create_bento_json<P: AsRef<Path>>(
     cwd: &PathBuf,
     user_cmd: &Option<Vec<String>>,
 ) -> Result<BentoConfigJson> {
+    info!("Creating Bento Config");
     // Open the file in read-only mode with buffer.
     let read_file =
-        File::open(read_path).expect("Failed to open read path while creating bento_config");
+        File::open(&read_path).with_context(|| format!("Failed to open read path while creating bento_config at {:?}", read_path))?;
     let reader = BufReader::new(read_file);
 
     let oci_image_config: OciImageConfig = serde_json::from_reader(reader)?;
+    debug!("Contents of OCI Image Config:\n{:#?}", oci_image_config);
 
+    info!("Building the `{}` rootfs", name);
     let mut rootfs: Vec<String> = Vec::with_capacity(image_layers.layers.len());
     for (_, val) in image_layers.layers.iter().enumerate() {
         let mut path = image_path
@@ -89,22 +93,26 @@ pub fn create_bento_json<P: AsRef<Path>>(
             .expect("Failed to create rootfs path");
         path.push_str(val);
         rootfs.push(path.to_string());
+        debug!("Adding to the rootfs: {}", path);
     }
+
+    debug!("Building the container's lowerdir.");
     let mut lowerdir_vec: Vec<String> = Vec::with_capacity(rootfs.len());
     for (i, path) in rootfs.iter().enumerate().rev() {
         let mut lowerdir = String::from("lowerdir");
         lowerdir.push_str(&i.to_string());
         let path_to_lower: PathBuf = PathBuf::from(&image_path).join(&lowerdir);
-        let path_to_lower_string = &path_to_lower
-            .clone()
-            .into_os_string()
-            .into_string()
-            .expect("Failed to create rootfs path");
-        extract::decompress_tarball(&path, &path_to_lower_string)
-            .expect("Failed to ungzip tarball");
+
+        let path_to_lower_string = match path_to_lower.clone().into_os_string().into_string() {
+            Ok(s) => s,
+            Err(err) => return Err(anyhow!("Failed to convert OsString to String: {:?}.", err))
+        };
+
+        extract::decompress_tarball(&path, &path_to_lower_string)?;
+        
         lowerdir_vec.push(path_to_lower_string.to_owned());
     }
-    let (upperdir, workdir, merge) = create_overlayfs(&container_path);
+    let (upperdir, workdir, merge) = create_overlayfs(&container_path)?;
 
     let bento_config: BentoConfigJson = BentoConfigJson::make_bento_config(
         name,
@@ -120,36 +128,44 @@ pub fn create_bento_json<P: AsRef<Path>>(
         cwd,
         user_cmd,
     );
-    write_bento_config(write_path, &bento_config)?;
+    write_bento_config(&write_path, &bento_config)?;
 
     Ok(bento_config)
 }
 
-pub fn create_overlayfs(container_path: &PathBuf) -> (PathBuf, PathBuf, PathBuf) {
+pub fn create_overlayfs(container_path: &PathBuf) -> Result<(PathBuf, PathBuf, PathBuf)> {
     //** Create your container root directory **//
     let upperdir = container_path.join("upper");
     let workdir = container_path.join("workdir");
     let merge = container_path.join("merge");
-    create_dir(&upperdir).expect("Failed to create upperdir");
-    create_dir(&workdir).expect("Failed to creat workdir");
-    create_dir(&merge).expect("Failed to creat merge");
+    
+    debug!("Creating the overlayfs: \n\tupperdir: {:?}\n\tworkdir: {:?}\n\tmergedir: {:?}", upperdir, workdir, upperdir);
 
-    (upperdir, workdir, merge)
+    create_dir(&upperdir).context("Failed to create upperdir")?;
+    create_dir(&workdir).context("Failed to create workdir")?;
+    create_dir(&merge).context("Failed to create merge")?;
+
+    Ok((upperdir, workdir, merge))
 }
 
-pub fn write_bento_config<P: AsRef<Path>>(write_path: P, bento: &BentoConfigJson) -> Result<()> {
-    let file = File::create(write_path).expect("couldnt open");
+pub fn write_bento_config(write_path: &PathBuf, bento: &BentoConfigJson) -> Result<()> {
+    debug!("Writing bento config to file!");
+    let file = File::create(write_path).context("Failed to open bento config file.")?;
     let mut writer = BufWriter::new(file);
-    to_writer_pretty(&mut writer, &bento).unwrap();
-    writer.flush().expect("Failed to flush the writer");
-
-    Ok(())
+    to_writer_pretty(&mut writer, &bento)?;
+    writer.flush().context("Failed to flush the writer")?;
+    debug!("Successfully wrote bento config to {:?}!", write_path);
+    Ok(())  
 }
 
 pub fn get_bento_config(bento_path: &PathBuf) -> Result<BentoConfigJson> {
+    debug!("Getting bento config at: {:#?}", bento_path);
+
     let file = File::open(&bento_path).expect("Couldnt open the bento_config.json");
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
     let bento_config_json: BentoConfigJson = serde_json::from_reader(reader)?;
+    debug!("Bento config contents\n{:#?}", bento_config_json);
+    
     Ok(bento_config_json)
 }
