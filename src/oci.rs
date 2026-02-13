@@ -1,5 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
@@ -60,6 +61,7 @@ pub struct ManifestLayers {
 }
 
 pub fn get_config_path(digest: &str) -> Option<PathBuf> {
+    debug!("Looking for config path from: `{}`", digest);
     match digest.find(":") {
         None => None,
         Some(colon_index) => {
@@ -72,27 +74,35 @@ pub fn get_config_path(digest: &str) -> Option<PathBuf> {
 }
 
 pub fn get_oci_index(index_json_path: &PathBuf) -> Result<OciIndex> {
+    debug!("Getting the OCI Image Index at {:?}.", index_json_path);
     let file = File::open(index_json_path)
         .with_context(|| format!("Couldnt open Index.json at {}.", index_json_path.display()))?;
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
-    let a: OciIndex = serde_json::from_reader(reader).with_context(|| {
+    let oci_index: OciIndex = serde_json::from_reader(reader).with_context(|| {
         format!(
             "Failed to read OciIndex from: {}.",
             index_json_path.display()
         )
     })?;
-    Ok(a)
+    debug!("OCI Index contents:\n{:#?}.", oci_index);
+    Ok(oci_index)
 }
 
 pub fn get_oci_manifest(manifest_path: &PathBuf) -> Result<OciManifest> {
+    debug!("Checking existence of Oci Manifest Path");
+    if !manifest_path.exists() {
+        return Err(anyhow!("Manifest path does not exist at {:?}.", manifest_path));
+    }
     let file = File::open(&manifest_path)
-        .with_context(|| format!("Failed to find OciManifest at {}.", manifest_path.display()))?;
+        .with_context(|| format!("Failed to open OciManifest at {}.", manifest_path.display()))?;
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
-    let a: OciManifest = serde_json::from_reader(reader)
+    let oci_manifest: OciManifest = serde_json::from_reader(reader)
         .with_context(|| format!("Failed to read OciManifest at {}.", manifest_path.display()))?;
-    Ok(a)
+
+    debug!("Contents of OCI manifest:\n{:#?}", oci_manifest);
+    Ok(oci_manifest)
 }
 
 pub fn get_nested_manifest(
@@ -100,12 +110,14 @@ pub fn get_nested_manifest(
     nested_index_json_path: &Option<PathBuf>,
     target_arch: &String,
 ) -> Result<Option<usize>> {
+    debug!("Getting nested manifest that matches machine's architecture: {}", target_arch);
     if let Some(nested_path) = nested_index_json_path {
         match get_oci_index(&tmp_path.join(nested_path)) {
             Ok(nested) => {
                 for (i, manifest) in nested.manifests.iter().enumerate() {
                     if let Some(platform_arch) = &manifest.platform {
                         if platform_arch.architecture == *target_arch {
+                            debug!("Found target arch index at: {}.", i);
                             return Ok(Some(i));
                         }
                     }
@@ -113,12 +125,13 @@ pub fn get_nested_manifest(
             }
             Err(err) => {
                 return Err(anyhow!(
-                    "Failed to find appropriate architecture for this machine.\n\t{}",
+                    "Error occurred looking for architecture index.\n\t{}.",
                     err
                 ));
             }
         }
     }
+    debug!("No nested path found.");
     Ok(None)
 }
 

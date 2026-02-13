@@ -2,7 +2,6 @@ use crate::config::{ImageLayers, create_bento_json};
 use crate::oci::{
     ManifestLayers, get_config_path, get_nested_manifest, get_oci_index, get_oci_manifest,
 };
-use core::panic;
 use std::fs::File;
 use std::io::Seek;
 use std::path::{Path, PathBuf};
@@ -16,6 +15,7 @@ use std::{
     fs::OpenOptions,
     io::{Read, Write},
 };
+use tracing::{debug, info};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Container {
@@ -44,6 +44,7 @@ impl State {
 }
 
 fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> {
+    debug!("Producing blobs from layers: \n{:#?}", layers);
     let mut image_layers: Vec<String> = Vec::with_capacity(layers.len());
     for (_, val) in layers.iter().enumerate() {
         if let Some(colon_index) = val.digest.find(":") {
@@ -54,12 +55,17 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
             image_layers.push(layer_path);
         }
     }
+    if image_layers.is_empty() {
+        return Err(anyhow!("No image layers to return."))
+    }
+    debug!("Image layer blobs: \n{:#?}", image_layers);
     Ok(ImageLayers {
         layers: image_layers,
     })
 }
 pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<Container> {
     let manifest_path = container_path.join("container_manifest.json");
+    debug!("Checking for existing container at: {:?}", manifest_path);
 
     let mut container_manifest = OpenOptions::new()
         .read(true)
@@ -74,14 +80,18 @@ pub fn check_existing_container(name: &str, container_path: &PathBuf) -> Option<
         .expect("Failed to read contents to string");
 
     let result: HashMap<String, Container> = if json_contents.is_empty() {
+        debug!("Container manifest is empty.");
         HashMap::new() // Empty file? Start with empty HashMap
     } else {
         serde_json::from_str(&json_contents).expect("Failed to read json")
     };
+    debug!("Container manifest contents:\n{:#?}", result);
 
     if let Some(existing_container) = result.get(name) {
+        debug!("Existing container:\n{:#?}", existing_container);
         Some(existing_container.clone())
     } else {
+        debug!("Could not find container by the name:{:?}", name);
         None
     }
 }
@@ -223,6 +233,10 @@ pub fn update_container_status(
     container_manifest_path: &PathBuf,
 ) -> Result<()> {
     // Open the container manifest with options
+    debug!(
+        "Attempting to update container `{}`'s status:\n\tpid {:?}\n\tstate {:?}",
+        name, pid, new_state
+    );
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -236,7 +250,7 @@ pub fn update_container_status(
         })?;
 
     let mut result = get_map_from_json(&file)?;
-
+    debug!("Container manifest: contents: {:#?}", result);
     match result.get_mut(name) {
         Some(container) => {
             container.state = new_state;
@@ -244,14 +258,14 @@ pub fn update_container_status(
         }
         None => return Err(anyhow!("Container not found to update.")),
     }
-
+    debug!("Re-writing container manifest.");
     file.rewind()
         .context("Failed to rewind the container manifest.")?;
     file.set_len(0)
         .context("Failed to rewind the container manifest.")?;
 
     let buf = to_string_pretty(&result)
-        .context("Failed to converst string to json format update the container manifest.")?;
+        .context("Failed to convert string to json format update the container manifest.")?;
     file.write_all(buf.as_bytes())
         .context("Failed to update the container manifest.")?;
 
@@ -260,6 +274,10 @@ pub fn update_container_status(
 
 pub fn list_container_manifest(containers_path: &Path) {
     let container_manifest_path = containers_path.join("container_manifest.json");
+    debug!(
+        "Looking into container manifest at {:?}",
+        container_manifest_path
+    );
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -268,6 +286,7 @@ pub fn list_container_manifest(containers_path: &Path) {
         .expect("Failed to open File with Options");
 
     let mut json_contents = String::new();
+
     file.read_to_string(&mut json_contents)
         .expect("Failed to read contents to string");
 
@@ -277,11 +296,16 @@ pub fn list_container_manifest(containers_path: &Path) {
         serde_json::from_str(&json_contents).expect("Failed to read json")
     };
     if result.is_empty() {
+        debug!("Container manifest is empty!");
         eprintln!("No containers available.");
     } else {
+        debug!(
+            "Contents of container manifest has {} entries",
+            result.len()
+        );
         for (k, v) in result.iter() {
             eprintln!("{}", k);
-            eprintln!("==> {:?}", v.state)
+            eprintln!("==> {:?}", v.state);
         }
     }
 }
@@ -311,15 +335,18 @@ pub fn create_bento_config(
     cwd: &PathBuf,
     user_cmd: &Option<Vec<String>>,
 ) -> Result<(String, PathBuf)> {
+    debug!("Creating bento config.");
     let bento_config_path: PathBuf = PathBuf::from(&bento_container_path).join("bento_config.json");
     let index_json_path: PathBuf = PathBuf::from(&bento_image_path).join("index.json");
-    let index_json = get_oci_index(&index_json_path).expect("Could not read from index.json");
+    let index_json = get_oci_index(&index_json_path)?;
 
     if index_json.manifests[0].media_type.contains("image.index") {
         let nested_digest = &index_json.manifests[0].digest;
         let nested_index_json_path = get_config_path(nested_digest);
         if let Some(nested_path) = &nested_index_json_path {
+
             let target_arch = return_cpu_architecture();
+            debug!("Target Architecture: {}.", target_arch);
 
             let arch_specific_manifest_index = match get_nested_manifest(
                 &bento_image_path,
@@ -343,42 +370,46 @@ pub fn create_bento_config(
             };
 
             // now that we have an index we want the nested index.json
-            let nested_json = get_oci_index(&bento_image_path.join(nested_path))
-                .expect("Failed to get nested JSON");
+            let nested_json = get_oci_index(&bento_image_path.join(nested_path))?;
             let manifest_path_option =
                 get_config_path(&nested_json.manifests[arch_specific_manifest_index].digest);
             match manifest_path_option {
-                None => panic!("No config"),
+                None => return Err(anyhow!("No usable manifest path found!")),
                 Some(manifest_path) => {
                     let full_manifest_path = PathBuf::from(&bento_image_path).join(&manifest_path);
-                    let manifest_json = get_oci_manifest(&full_manifest_path)
-                        .expect("Couldnt get the manifest.json");
-                    let image_layers = get_layers_from_manifest(manifest_json.layers)
-                        .expect("Failed to get image layers from manifest");
+                    let manifest_json = get_oci_manifest(&full_manifest_path)?;
+                    let image_layers = get_layers_from_manifest(manifest_json.layers)?;
                     let manifest_config_path_option = get_config_path(&manifest_json.config.digest);
                     match manifest_config_path_option {
-                        None => panic!("No config"),
+                        None => return Err(anyhow!("Manifest config path not found.")),
                         Some(manifest_config_path) => {
                             let full_manifest_config_path =
                                 PathBuf::from(&bento_image_path).join(&manifest_config_path);
                             create_bento_json(
                                 container_name,
-                                full_manifest_config_path,
-                                bento_config_path,
+                                &full_manifest_config_path,
+                                &bento_config_path,
                                 image_layers,
                                 &bento_image_path,
                                 &bento_container_path,
                                 mount,
                                 cwd,
                                 user_cmd,
-                            )
-                            .expect("Failed to create bento json");
+                            )?;
                         }
                     }
+                    info!("Successfully created bento container json!");
                 }
             }
         }
+        else {
+            return Err(anyhow!("Failed to retrieve nested image path."));
+        }
     }
+    else {
+        return Err(anyhow!("Failed to retrieve Index Json."));
+    }
+    info!("Added the new container!");
     Ok((container_name.to_string(), bento_container_path.to_owned()))
 }
 
