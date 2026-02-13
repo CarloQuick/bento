@@ -70,7 +70,7 @@ mod tests {
     #[test]
     fn env_vals_ok() -> Result<()>{
         
-        let test_path = "/tmp/test_path";
+        let test_path = "/tmp/test_path_env_vals_ok";
         create_dir_all(test_path)?;
         
         let envs: Env = Env::new(
@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn missing_bento_dir_err() -> Result<()>{
         
-        let test_path = "/tmp/test_path";
+        let test_path = "/tmp/test_path_missing_bento_dir_err";
         let missing_bento_dir = "/tmp/missing_est_path";
         create_dir_all(test_path)?;
         
@@ -103,7 +103,7 @@ mod tests {
         #[test]
     fn bento_dir_is_empty_err() -> Result<()>{
         
-        let test_path = "/tmp/test_path";
+        let test_path = "/tmp/test_path_bento_dir_is_empty_err";
         let missing_bento_dir = "";
         create_dir_all(test_path)?;
         
