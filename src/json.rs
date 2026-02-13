@@ -374,7 +374,7 @@ pub fn create_bento_config(
             let manifest_path_option =
                 get_config_path(&nested_json.manifests[arch_specific_manifest_index].digest);
             match manifest_path_option {
-                None => return Err(anyhow!("Usable manifest path found!")),
+                None => return Err(anyhow!("No usable manifest path found!")),
                 Some(manifest_path) => {
                     let full_manifest_path = PathBuf::from(&bento_image_path).join(&manifest_path);
                     let manifest_json = get_oci_manifest(&full_manifest_path)?;
