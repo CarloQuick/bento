@@ -125,7 +125,7 @@ pub fn get_nested_manifest(
             }
             Err(err) => {
                 return Err(anyhow!(
-                    "Error occurded looking for architecture index.\n\t{}.",
+                    "Error occurred looking for architecture index.\n\t{}.",
                     err
                 ));
             }

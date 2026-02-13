@@ -204,7 +204,7 @@ fn fork_into_namespaces(
                             debug!("[2nd Child] setting hostname: {}", name);
                             sethostname(name).context("[2nd Child] Failed to set the hostname.")?;
                             let (path, args, env) = get_execve_params(bento_config)
-                                .context("[2nd Child] Faild to get PATH, ARGS, or ENV.")?;
+                                .context("[2nd Child] Failed to get PATH, ARGS, or ENV.")?;
 
                             debug!("[2nd Child] attempting execve.");
                             match execve(&path, &args, &env) {
@@ -419,7 +419,7 @@ pub fn start(container: &Container, name: &str, env: &Env) -> Result<()> {
             &env.bento_containers_env_path
                 .join("container_manifest.json"),
         )
-        .with_context(|| format!("Container {} faild to fork the process.", name))?;
+        .with_context(|| format!("Container {} failed to fork the process.", name))?;
     } else {
         anyhow::bail!("Container failed to start! Check its status.");
     }
@@ -530,7 +530,7 @@ pub fn stop(container: &Container, name: &str, env: &Env) -> Result<()> {
                         {
                             match c.state {
                                 State::Stopped => {
-                                    debug!("Container effecively stopped at: {}s.", i);
+                                    debug!("Container effectively stopped at: {}s.", i);
                                     return Ok(());
                                 }
                                 _ => {
@@ -647,7 +647,7 @@ pub fn exec(
         })?;
         debug!("Contents of bento config: \n{:#?}", bento_config);
 
-        debug!("Forking into processL at PID: {}", pid);
+        debug!("Forking into process at PID: {}", pid);
         match unsafe { fork() } {
             Ok(ForkResult::Parent { child }) => {
                 waitpid(child, None).with_context(|| {
