@@ -434,6 +434,7 @@ pub fn create(
     user_cmd: &Option<Vec<String>>,
     env: &Env,
 ) -> Result<()> {
+    debug!("Creating path to new container at: {:?}.", &env.bento_dir);
     create_dir_all(&env.bento_dir).with_context(|| {
         format!(
             "Create failed to access or create a new base container directory at {:?}.",
@@ -459,12 +460,12 @@ pub fn create(
     if let Err(err) = unpack_image(image, &env.bento_image_env_path, new_bento_image_path) {
         rollback_dirs(vec![new_bento_image_path, new_bento_container_path]).with_context(|| {
             format!(
-                "Failed to rollback unpacked images and container folders at {:?}\n\t{}",
+                "Failed to rollback unpacked images and container folders at {:?}\n\t{}.",
                 vec![new_bento_image_path, new_bento_container_path],
                 err
             )
         })?;
-        return Err(anyhow!("Failed to unpack the image: {}", image));
+        return Err(anyhow!("Failed to unpack the image: {}.", image));
     }
 
     let (container_name, created_container_path) = match json::create_bento_config(
@@ -705,8 +706,11 @@ pub fn get_path_index(env: &Vec<String>) -> usize {
 }
 
 fn format_create_params(name: &String, image: &String) -> (String, String) {
+    debug!("Removing `:` from name and image.");
+    debug!("Original name: {} | Original image: {}", name, image);
     let image = hyphen_for_colon(image);
     let name = hyphen_for_colon(name);
+    debug!("Returned name: {} | Returned image: {}", name, image);
     (image, name)
 }
 pub fn get_bento_envs() -> Result<(String, String)> {
@@ -727,7 +731,9 @@ fn create_container_dirs(
 ) -> Result<(PathBuf, PathBuf)> {
     let new_bento_image_path = PathBuf::from(&bento_images_env).join(image);
     let new_bento_container_path = PathBuf::from(&bento_containers_env).join(name);
+    debug!("Creating bento image and container dirs:\n\timage path: {:?}\n\tcontainer path: {:?}", new_bento_image_path, new_bento_container_path);
     if let Err(create_error) = fs::create_dir_all(&new_bento_image_path) {
+        error!("Error creating image dir. Attempting rollback of bento image dir.");
         rollback_dirs(vec![&new_bento_image_path]).with_context(|| {
             format!(
                 "Failed to rollback directories from {:?}\n\t{}",
@@ -737,6 +743,7 @@ fn create_container_dirs(
         })?;
     } else {
         if let Err(create_error) = fs::create_dir_all(&new_bento_container_path) {
+            error!("Error creating image dir. Attempting rollback of both image and container dirs.");
             rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]).with_context(
                 || {
                     format!(
@@ -752,6 +759,7 @@ fn create_container_dirs(
 }
 
 pub fn rollback_dirs(dirs: Vec<&PathBuf>) -> Result<()> {
+    debug!("Dirs to rollback: {:#?}", dirs);
     for dir in dirs.iter() {
         if let Err(remove_error) = fs::remove_dir_all(dir) {
             eprintln!("Error: {}. removing failed Image directory", remove_error)
@@ -759,7 +767,7 @@ pub fn rollback_dirs(dirs: Vec<&PathBuf>) -> Result<()> {
             eprintln!("Removed {:?} after failed execution.", dir);
         }
     }
-
+    debug!("Successfully rolledback dirs");
     Ok(())
 }
 
@@ -767,10 +775,11 @@ fn unpack_image(
     image: &String,
     bento_image_env_path: &PathBuf,
     bento_image_path: &PathBuf,
-) -> Result<(), std::io::Error> {
+) -> Result<()> {
     let mut tar = String::from(image);
     tar.push_str(".tar");
     let image_tar_path = PathBuf::from(&bento_image_env_path).join(&tar);
+    debug!("Unpacking image tar at: {:?}", image_tar_path);
     let res = extract::unpack_archive(&image_tar_path, &bento_image_path);
     res
 }
