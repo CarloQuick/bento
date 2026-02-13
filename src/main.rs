@@ -37,32 +37,35 @@ fn main() -> Result<()> {
             mount,
             current_working_directory,
             command,
-        }) => match json::check_existing_container(name, &env.bento_containers_env_path) {
-            Some(_) => {
-                anyhow::bail!(
-                    "Container '{}' already exists!\n\tRun `status {}` for information about the already created container.",
-                    name,
-                    name
-                );
+        }) => {
+            debug!("Attempting to create `{}`", name);
+            match json::check_existing_container(name, &env.bento_containers_env_path) {
+                Some(_) => {
+                    anyhow::bail!(
+                        "Container '{}' already exists!\n\tRun `status {}` for information about the already created container.",
+                        name,
+                        name
+                    );
+                }
+                None => {
+                    let cwd = match current_working_directory {
+                        Some(c) => c,
+                        None => &PathBuf::from("/"),
+                    };
+                    let mount_dir = match mount {
+                        Some(m) => m,
+                        None => &PathBuf::new(),
+                    };
+                    debug!("Create with args:\n\tname: {} \n\timage: {}\n\tmount_dir: {:?}\n\tcwd: {:?}\n\tcommand: {:#?}", name, image, mount_dir, cwd, command);
+                    match create(name, image, mount_dir, cwd, command, &env) {
+                        Ok(_) => {
+                            eprintln!("🍱 Bento Container {} ready to start!", name)
+                        }
+                        Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
+                    };
+                }
             }
-            None => {
-                let cwd = match current_working_directory {
-                    Some(c) => c,
-                    None => &PathBuf::from("/"),
-                };
-                let mount_dir = match mount {
-                    Some(m) => m,
-                    None => &PathBuf::new(),
-                };
-
-                match create(name, image, mount_dir, cwd, command, &env) {
-                    Ok(_) => {
-                        eprintln!("🍱 Bento Container {} finished", name)
-                    }
-                    Err(e) => return Err(anyhow!("Container not created.\n Error: {}.", e)),
-                };
-            }
-        },
+        }
         Some(Commands::Start { name }) => {
             debug!("Attempting to start container: {}", name);
             match json::check_existing_container(name, &env.bento_containers_env_path) {
