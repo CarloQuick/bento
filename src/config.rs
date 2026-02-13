@@ -139,7 +139,7 @@ pub fn create_overlayfs(container_path: &PathBuf) -> Result<(PathBuf, PathBuf, P
     let workdir = container_path.join("workdir");
     let merge = container_path.join("merge");
     
-    debug!("Creating the overlayfs: \n\tupperdir: {:?}\n\tworkdir: {:?}\n\tmergedir: {:?}", upperdir, workdir, upperdir);
+    debug!("Creating the overlayfs: \n\tupperdir: {:?}\n\tworkdir: {:?}\n\tmergedir: {:?}", upperdir, workdir, merge);
 
     create_dir(&upperdir).context("Failed to create upperdir")?;
     create_dir(&workdir).context("Failed to create workdir")?;
