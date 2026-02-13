@@ -105,6 +105,7 @@ fn main() -> Result<()> {
             }
         }
         Some(Commands::Stop { name }) => {
+            debug!("Attempting to stop container `{}`", name);
             match json::check_existing_container(name, &env.bento_containers_env_path) {
                 Some(container) => match stop(&container, name, &env) {
                     Ok(()) => info!("Container {} stopped successfully", name),
@@ -119,7 +120,7 @@ fn main() -> Result<()> {
             debug!("Attempting to kill container `{}`", name);
             match json::check_existing_container(name, &env.bento_containers_env_path) {
                 Some(container) => match kill_container(&container) {
-                    Ok(()) => println!("Container {} killed successfully", name),
+                    Ok(()) => info!("Container {} killed successfully", name),
                     Err(e) => anyhow::bail!("{:?}", e),
                 },
                 None => {
