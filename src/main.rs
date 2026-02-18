@@ -56,7 +56,10 @@ fn main() -> Result<()> {
                         Some(m) => m,
                         None => &PathBuf::new(),
                     };
-                    debug!("Create with args:\n\tname: {} \n\timage: {}\n\tmount_dir: {:?}\n\tcwd: {:?}\n\tcommand: {:#?}", name, image, mount_dir, cwd, command);
+                    debug!(
+                        "Create with args:\n\tname: {} \n\timage: {}\n\tmount_dir: {:?}\n\tcwd: {:?}\n\tcommand: {:#?}",
+                        name, image, mount_dir, cwd, command
+                    );
                     match create(name, image, mount_dir, cwd, command, &env) {
                         Ok(_) => {
                             eprintln!("🍱 Bento Container {} ready to start!", name)
@@ -141,6 +144,13 @@ fn main() -> Result<()> {
                 None => {
                     anyhow::bail!("Sorry, {} is not an existing Bento container.", name);
                 }
+            }
+        }
+        Some(Commands::Delete { name, force }) => {
+            debug!("Attempting to delete `{}`", name);
+            match json::check_existing_container(name, &env.bento_containers_env_path) {
+                Some(container) => eprintln!("Deleting {:#?} with force: {}", container, force),
+                None => {}
             }
         }
         None => {
