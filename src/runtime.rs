@@ -15,15 +15,17 @@ use nix::{
     unistd::{Pid, getpid},
 };
 use std::ffi::CString;
-use std::fs::{File, create_dir_all};
+use std::fs::{File, create_dir_all, set_permissions};
 use std::io::ErrorKind;
 use std::os::fd::{AsFd, BorrowedFd};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 use std::{env, fs};
 use std::{process, time};
-use tracing::{debug, error};
+use tracing::{debug, error, info};
+use walkdir::WalkDir;
 
 fn unshare_user_namespace() -> Result<()> {
     let host_uid = nix::unistd::getuid();
@@ -689,6 +691,50 @@ pub fn exec(
         return Err(anyhow!(ErrorKind::NotFound));
     }
 }
+pub fn delete(container: &Container, name: &str, force: bool) -> Result<()> {
+    debug!("Container's state: {:?}", container.state);
+    match container.state {
+        State::Created | State::Stopped => {
+            rollback_dirs(vec![&PathBuf::from(&container.dir)])?;
+            // rollback_container_manifest(name, &PathBuf::from(&container.dir))?;
+        }
+        State::Creating | State::Running => {
+            if force {
+                match container.pid {
+                    // kill
+                    Some(pid) => match apply_signal(Pid::from_raw(pid), Signal::SIGKILL) {
+                        Ok(()) => {
+                            rollback_dirs(vec![&PathBuf::from(&container.dir)])?;
+                            rollback_container_manifest(name, &PathBuf::from(&container.dir))?;
+                        }
+                        Err(err) => {
+                            return Err(anyhow!(
+                                "Failed to delete due to missing pid: {:#?}\n\t{}",
+                                container,
+                                err
+                            ));
+                        }
+                    },
+                    None => {
+                        return Err(anyhow!(
+                            "Failed to delete due to missing pid: {:#?}",
+                            container
+                        ));
+                    }
+                }
+            } else {
+                return Err(anyhow!(
+                    "Failed to delete due to incompatible container state: {:#?}",
+                    container.state
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn _remove_from_config() {}
+fn _remove_directories() {}
 
 pub fn get_executable_paths(env: &Vec<String>) -> Result<Vec<&str>> {
     let index = get_path_index(env);
@@ -731,7 +777,10 @@ fn create_container_dirs(
 ) -> Result<(PathBuf, PathBuf)> {
     let new_bento_image_path = PathBuf::from(&bento_images_env).join(image);
     let new_bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-    debug!("Creating bento image and container dirs:\n\timage path: {:?}\n\tcontainer path: {:?}", new_bento_image_path, new_bento_container_path);
+    debug!(
+        "Creating bento image and container dirs:\n\timage path: {:?}\n\tcontainer path: {:?}",
+        new_bento_image_path, new_bento_container_path
+    );
     if let Err(create_error) = fs::create_dir_all(&new_bento_image_path) {
         error!("Error creating image dir. Attempting rollback of bento image dir.");
         rollback_dirs(vec![&new_bento_image_path]).with_context(|| {
@@ -743,7 +792,9 @@ fn create_container_dirs(
         })?;
     } else {
         if let Err(create_error) = fs::create_dir_all(&new_bento_container_path) {
-            error!("Error creating image dir. Attempting rollback of both image and container dirs.");
+            error!(
+                "Error creating image dir. Attempting rollback of both image and container dirs."
+            );
             rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]).with_context(
                 || {
                     format!(
@@ -758,13 +809,34 @@ fn create_container_dirs(
     Ok((new_bento_image_path, new_bento_container_path))
 }
 
+fn set_dir_permissions(path: &PathBuf) -> Result<()> {
+    for entry in WalkDir::new(path) {
+        let e = entry.context("fuxtttt")?;
+        let p = e.path();
+        debug!("Walking: {:?}", path);
+        let metadata = e.metadata().context("failed")?;
+        let mut permissions = metadata.permissions();
+        debug!("setting permissions for: {:#?}", permissions);
+        permissions.set_mode(0o040775);
+        set_permissions(p, permissions.clone())?;
+        debug!("permissions after: {:#?}", permissions);
+    }
+
+    Ok(())
+}
+
 pub fn rollback_dirs(dirs: Vec<&PathBuf>) -> Result<()> {
     debug!("Dirs to rollback: {:#?}", dirs);
     for dir in dirs.iter() {
+        debug!("Attempting to remove: {:?}", dir);
+        set_dir_permissions(&dir)?;
         if let Err(remove_error) = fs::remove_dir_all(dir) {
-            eprintln!("Error: {}. removing failed Image directory", remove_error)
+            return Err(anyhow!(
+                "Error: {}. removing failed Image directory",
+                remove_error
+            ));
         } else {
-            eprintln!("Removed {:?} after failed execution.", dir);
+            info!("Removed {:?}.", dir);
         }
     }
     debug!("Successfully rolledback dirs");

@@ -4,7 +4,7 @@ use bento::{
     bento_cli::{Cli, Commands},
     env::Env,
     json::{self, State},
-    runtime::{create, exec, kill_container, start, stop},
+    runtime::{create, delete, exec, kill_container, start, stop},
 };
 use clap::Parser;
 use dotenv::dotenv;
@@ -149,8 +149,11 @@ fn main() -> Result<()> {
         Some(Commands::Delete { name, force }) => {
             debug!("Attempting to delete `{}`", name);
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(container) => eprintln!("Deleting {:#?} with force: {}", container, force),
-                None => {}
+                Some(container) => match delete(&container, name, *force) {
+                    Ok(()) => info!("delete successful"),
+                    Err(e) => anyhow::bail!("{:?}", e),
+                },
+                None => anyhow::bail!("Sorry, not a container."),
             }
         }
         None => {
