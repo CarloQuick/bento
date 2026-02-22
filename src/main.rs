@@ -149,7 +149,7 @@ fn main() -> Result<()> {
         Some(Commands::Delete { name, force }) => {
             debug!("Attempting to delete `{}`", name);
             match json::check_existing_container(name, &env.bento_containers_env_path) {
-                Some(container) => match delete(&container, name, *force) {
+                Some(container) => match delete(&container, name, *force, &env) {
                     Ok(()) => info!("delete successful"),
                     Err(e) => anyhow::bail!("{:?}", e),
                 },

@@ -25,7 +25,6 @@ use std::time::Duration;
 use std::{env, fs};
 use std::{process, time};
 use tracing::{debug, error, info};
-use walkdir::WalkDir;
 
 fn unshare_user_namespace() -> Result<()> {
     let host_uid = nix::unistd::getuid();
@@ -691,12 +690,13 @@ pub fn exec(
         return Err(anyhow!(ErrorKind::NotFound));
     }
 }
-pub fn delete(container: &Container, name: &str, force: bool) -> Result<()> {
+
+pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Result<()> {
     debug!("Container's state: {:?}", container.state);
     match container.state {
         State::Created | State::Stopped => {
             rollback_dirs(vec![&PathBuf::from(&container.dir)])?;
-            // rollback_container_manifest(name, &PathBuf::from(&container.dir))?;
+            rollback_container_manifest(name, &PathBuf::from(&env.bento_containers_env_path))?;
         }
         State::Creating | State::Running => {
             if force {
@@ -705,7 +705,10 @@ pub fn delete(container: &Container, name: &str, force: bool) -> Result<()> {
                     Some(pid) => match apply_signal(Pid::from_raw(pid), Signal::SIGKILL) {
                         Ok(()) => {
                             rollback_dirs(vec![&PathBuf::from(&container.dir)])?;
-                            rollback_container_manifest(name, &PathBuf::from(&container.dir))?;
+                            rollback_container_manifest(
+                                name,
+                                &PathBuf::from(&env.bento_containers_env_path),
+                            )?;
                         }
                         Err(err) => {
                             return Err(anyhow!(
@@ -807,16 +810,30 @@ fn create_container_dirs(
 }
 
 fn set_dir_permissions(path: &PathBuf) -> Result<()> {
-    for entry in WalkDir::new(path) {
-        let e = entry?;
-        let p = e.path();
+    if path.is_dir() {
         debug!("Walking: {:?}", path);
-        let metadata = e.metadata()?;
-        let mut permissions = metadata.permissions();
-        debug!("setting permissions for: {:#?}", permissions);
-        permissions.set_mode(0o040775);
-        set_permissions(p, permissions.clone())?;
-        debug!("permissions after: {:#?}", permissions);
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+
+            debug!("entry: {:?}", entry);
+            debug!("metadata: {:?}", entry);
+
+            let mut permissions = metadata.permissions();
+
+            debug!("permissions before: {:#?}", permissions);
+
+            permissions.set_mode(0o040775);
+            let p = entry.path();
+            set_permissions(&p, permissions.clone())?;
+
+            debug!("permissions after: {:#?}", permissions);
+
+            if p.is_dir() {
+                set_dir_permissions(&p)?;
+            } else {
+            }
+        }
     }
 
     Ok(())
