@@ -733,9 +733,6 @@ pub fn delete(container: &Container, name: &str, force: bool) -> Result<()> {
     Ok(())
 }
 
-fn _remove_from_config() {}
-fn _remove_directories() {}
-
 pub fn get_executable_paths(env: &Vec<String>) -> Result<Vec<&str>> {
     let index = get_path_index(env);
     let v: Vec<&str> = env[index].split(":").collect();
@@ -811,10 +808,10 @@ fn create_container_dirs(
 
 fn set_dir_permissions(path: &PathBuf) -> Result<()> {
     for entry in WalkDir::new(path) {
-        let e = entry.context("fuxtttt")?;
+        let e = entry?;
         let p = e.path();
         debug!("Walking: {:?}", path);
-        let metadata = e.metadata().context("failed")?;
+        let metadata = e.metadata()?;
         let mut permissions = metadata.permissions();
         debug!("setting permissions for: {:#?}", permissions);
         permissions.set_mode(0o040775);
