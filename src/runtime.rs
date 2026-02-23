@@ -15,15 +15,16 @@ use nix::{
     unistd::{Pid, getpid},
 };
 use std::ffi::CString;
-use std::fs::{File, create_dir_all};
+use std::fs::{File, create_dir_all, set_permissions};
 use std::io::ErrorKind;
 use std::os::fd::{AsFd, BorrowedFd};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 use std::{env, fs};
 use std::{process, time};
-use tracing::{debug, error};
+use tracing::{debug, error, info, warn};
 
 fn unshare_user_namespace() -> Result<()> {
     let host_uid = nix::unistd::getuid();
@@ -690,6 +691,77 @@ pub fn exec(
     }
 }
 
+fn clean_up_container(
+    rollbacks: Vec<&PathBuf>,
+    sleep_dur: Option<&Duration>,
+    name: &str,
+    container_path: &PathBuf,
+) -> Result<()> {
+    match sleep_dur {
+        Some(dur) => thread::sleep(*dur),
+        None => {}
+    }
+    rollback_dirs(rollbacks)?;
+    rollback_container_manifest(name, container_path)?;
+
+    Ok(())
+}
+
+pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Result<()> {
+    debug!("Container's state: {:?}", container.state);
+    match container.state {
+        State::Created | State::Stopped => {
+            clean_up_container(
+                vec![&PathBuf::from(&container.dir)],
+                None,
+                name,
+                &PathBuf::from(&env.bento_containers_env_path),
+            )?;
+        }
+        State::Creating | State::Running => {
+            if force {
+                match container.pid {
+                    // kill
+                    Some(pid) => match apply_signal(Pid::from_raw(pid), Signal::SIGKILL) {
+                        Ok(()) => {
+                            clean_up_container(
+                                vec![&PathBuf::from(&container.dir)],
+                                Some(&Duration::from_millis(200)),
+                                name,
+                                &PathBuf::from(&env.bento_containers_env_path),
+                            )?;
+                        }
+                        Err(err) => {
+                            return Err(anyhow!(
+                                "Failed applying `SIGKILL` to container: {}\n\t{:#?}\n\t{}",
+                                name,
+                                container,
+                                err
+                            ));
+                        }
+                    },
+                    None => {
+                        warn!("Container {} had a pid of {:?}", name, container.pid);
+
+                        clean_up_container(
+                            vec![&PathBuf::from(&container.dir)],
+                            None,
+                            name,
+                            &PathBuf::from(&env.bento_containers_env_path),
+                        )?;
+                    }
+                }
+            } else {
+                return Err(anyhow!(
+                    "Failed to delete due to incompatible container state: {:#?}",
+                    container.state
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn get_executable_paths(env: &Vec<String>) -> Result<Vec<&str>> {
     let index = get_path_index(env);
     let v: Vec<&str> = env[index].split(":").collect();
@@ -731,7 +803,10 @@ fn create_container_dirs(
 ) -> Result<(PathBuf, PathBuf)> {
     let new_bento_image_path = PathBuf::from(&bento_images_env).join(image);
     let new_bento_container_path = PathBuf::from(&bento_containers_env).join(name);
-    debug!("Creating bento image and container dirs:\n\timage path: {:?}\n\tcontainer path: {:?}", new_bento_image_path, new_bento_container_path);
+    debug!(
+        "Creating bento image and container dirs:\n\timage path: {:?}\n\tcontainer path: {:?}",
+        new_bento_image_path, new_bento_container_path
+    );
     if let Err(create_error) = fs::create_dir_all(&new_bento_image_path) {
         error!("Error creating image dir. Attempting rollback of bento image dir.");
         rollback_dirs(vec![&new_bento_image_path]).with_context(|| {
@@ -743,7 +818,9 @@ fn create_container_dirs(
         })?;
     } else {
         if let Err(create_error) = fs::create_dir_all(&new_bento_container_path) {
-            error!("Error creating image dir. Attempting rollback of both image and container dirs.");
+            error!(
+                "Error creating image dir. Attempting rollback of both image and container dirs."
+            );
             rollback_dirs(vec![&new_bento_image_path, &new_bento_container_path]).with_context(
                 || {
                     format!(
@@ -758,13 +835,46 @@ fn create_container_dirs(
     Ok((new_bento_image_path, new_bento_container_path))
 }
 
+fn set_dir_permissions(path: &PathBuf) -> Result<()> {
+    if path.is_dir() {
+        debug!("Walking: {:?}", path);
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+
+            debug!("entry: {:?}", entry);
+            debug!("metadata: {:?}", metadata);
+
+            let mut permissions = metadata.permissions();
+
+            debug!("permissions before: {:#?}", permissions);
+            permissions.set_mode(0o775);
+            let p = entry.path();
+            set_permissions(&p, permissions.clone()).context("Failed setting permissions.")?;
+
+            debug!("permissions after: {:#?}", permissions);
+
+            if p.is_dir() {
+                set_dir_permissions(&p)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 pub fn rollback_dirs(dirs: Vec<&PathBuf>) -> Result<()> {
     debug!("Dirs to rollback: {:#?}", dirs);
     for dir in dirs.iter() {
+        debug!("Attempting to remove: {:?}", dir);
+        set_dir_permissions(&dir)?;
         if let Err(remove_error) = fs::remove_dir_all(dir) {
-            eprintln!("Error: {}. removing failed Image directory", remove_error)
+            return Err(anyhow!(
+                "Error: {}. removing failed Image directory",
+                remove_error
+            ));
         } else {
-            eprintln!("Removed {:?} after failed execution.", dir);
+            info!("Removed {:?}.", dir);
         }
     }
     debug!("Successfully rolledback dirs");
@@ -883,5 +993,82 @@ mod tests {
 
         let error = result.unwrap_err();
         assert_eq!(error.to_string(), "Container not currently running.");
+    }
+
+    #[test]
+    fn test_set_dir_permissions() -> Result<()> {
+        let tmp = tempfile::TempDir::new()?;
+        // let parent = PathBuf::from("set_perm_test_dir");
+        let inner_dir: PathBuf = tmp.path().join("set_dir_test");
+
+        // 1. Create a dummy file for the example
+        fs::create_dir_all(&inner_dir)?;
+
+        // 2. Get the current metadata and permissions
+        let metadata = fs::metadata(&inner_dir)?;
+        let mut permissions = metadata.permissions();
+
+        // 3. Edge case where permissions are lacking
+        permissions.set_mode(0o000);
+        set_permissions(&inner_dir, permissions.clone())?;
+
+        assert_eq!(permissions.mode(), 0);
+        assert!(remove_dir_all(&inner_dir).is_err());
+
+        // 4. set_dir_permissions is allows us to walk a directory to allow for deletions
+        set_dir_permissions(&PathBuf::from(tmp.path()))
+            .context("failed inside set_dir_permissions")?;
+
+        remove_dir_all(&inner_dir)?;
+
+        assert!(!&inner_dir.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete() -> Result<()> {
+        let tmp = tempfile::TempDir::new()?;
+        // Build the directory structure your code expects
+        fs::create_dir_all(tmp.path().join("images"))?;
+        fs::create_dir_all(tmp.path().join("containers"))?;
+        // Copy your committed fixture into it
+        fs::copy(
+            "test/images/busybox.tar",
+            tmp.path().join("images/busybox.tar"),
+        )?;
+        fs::copy(
+            "test/containers/container_manifest.json",
+            tmp.path().join("containers/container_manifest.json"),
+        )?;
+
+        // Now point your Env at the temp directory
+        let env = Env {
+            bento_dir: tmp.path().to_path_buf(),
+            bento_image_env_path: tmp.path().join("images"),
+            bento_containers_env_path: tmp.path().join("containers"),
+        };
+        let name = String::from("test_container");
+        let image = String::from("busybox");
+        let cwd = &PathBuf::from("/");
+        let user_cmd = vec![String::from("sh")];
+        let mount = &PathBuf::new();
+        let container_dir = tmp.path().join("containers").join(&name);
+        create(&name, &image, mount, cwd, &Some(user_cmd), &env)?;
+        let test_container = &Container {
+            dir: container_dir.display().to_string(),
+            state: State::Created,
+            pid: None,
+        };
+        assert_eq!(
+            json::check_existing_container(&name, &env.bento_containers_env_path),
+            Some(test_container.clone())
+        );
+        delete(&test_container, &name, false, &env)?;
+        assert_eq!(
+            json::check_existing_container(&name, &env.bento_containers_env_path),
+            None
+        );
+        Ok(())
     }
 }

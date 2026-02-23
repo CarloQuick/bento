@@ -74,6 +74,14 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         args: Vec<CString>,
     },
+    /// Removes a container with optional force
+    Delete {
+        /// Name of the container to delete
+        name: String,
+        /// Bypasses container status
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum LogLevel {
