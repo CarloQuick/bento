@@ -1,4 +1,3 @@
 /target
 .env
 *.patch
-/test
