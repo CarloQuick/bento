@@ -74,11 +74,11 @@ pub enum Commands {
         #[arg(allow_hyphen_values = true)]
         args: Vec<CString>,
     },
-    /// Execute commands inside a container
+    /// Removes a container with optional force
     Delete {
         /// Name of the container to delete
         name: String,
-        /// Bypases container status
+        /// Bypasses container status
         #[arg(short, long)]
         force: bool,
     },
