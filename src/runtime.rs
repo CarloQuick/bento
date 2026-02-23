@@ -817,21 +817,19 @@ fn set_dir_permissions(path: &PathBuf) -> Result<()> {
             let metadata = entry.metadata()?;
 
             debug!("entry: {:?}", entry);
-            debug!("metadata: {:?}", entry);
+            debug!("metadata: {:?}", metadata);
 
             let mut permissions = metadata.permissions();
 
             debug!("permissions before: {:#?}", permissions);
-
-            permissions.set_mode(0o040775);
+            permissions.set_mode(0o775);
             let p = entry.path();
-            set_permissions(&p, permissions.clone())?;
+            set_permissions(&p, permissions.clone()).context("Failed setting pemissions.")?;
 
             debug!("permissions after: {:#?}", permissions);
 
             if p.is_dir() {
                 set_dir_permissions(&p)?;
-            } else {
             }
         }
     }
@@ -878,6 +876,8 @@ pub fn hyphen_for_colon(image: &String) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs::remove_dir_all;
+
+    use anyhow::Ok;
 
     use super::*;
 
@@ -969,5 +969,67 @@ mod tests {
 
         let error = result.unwrap_err();
         assert_eq!(error.to_string(), "Container not currently running.");
+    }
+
+    #[test]
+    fn test_set_dir_permissions() -> Result<()> {
+        let parent = PathBuf::from("test_dir");
+        let inner_dir: PathBuf = PathBuf::from("test_dir/set_dir_test");
+
+        // 1. Create a dummy file for the example
+        fs::create_dir_all(&inner_dir)?;
+
+        // 2. Get the current metadata and permissions
+        let metadata = fs::metadata(&inner_dir)?;
+        let mut permissions = metadata.permissions();
+
+        // 3. Edge case where permissions are lacking
+        permissions.set_mode(0o000);
+        set_permissions(&inner_dir, permissions.clone())?;
+
+        assert_eq!(permissions.mode(), 0);
+        assert!(remove_dir_all(&inner_dir).is_err());
+
+        // 4. set_dir_permissions is allows us to walk a directory to allow for deletions
+        set_dir_permissions(&parent).context("failed inside set_dir_permissions")?;
+
+        remove_dir_all(&parent)?;
+
+        assert!(!PathBuf::from(&parent).exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete() -> Result<()> {
+        let name = String::from("test_container");
+        let image = String::from("busybox");
+        let cwd = &PathBuf::from("/");
+        let user_cmd = vec![String::from("sh")];
+        let mount = &PathBuf::new();
+        let env_dir = PathBuf::from("./test");
+        let env = Env {
+            bento_dir: PathBuf::from(&env_dir),
+            bento_image_env_path: env_dir.join("images"),
+            bento_containers_env_path: env_dir.join("containers"),
+        };
+
+        create(&name, &image, mount, cwd, &Some(user_cmd), &env)?;
+        let test_container = &Container {
+            dir: String::from("./test/containers/test_container"),
+            state: State::Created,
+            pid: None,
+        };
+        assert_eq!(
+            json::check_existing_container(&name, &env.bento_containers_env_path),
+            Some(test_container.clone())
+        );
+        delete(&test_container, &name, true, &env)?;
+        assert_eq!(
+            json::check_existing_container(&name, &env.bento_containers_env_path),
+            None
+        );
+        remove_dir_all(PathBuf::from("./test/images/busybox"))?;
+        Ok(())
     }
 }
