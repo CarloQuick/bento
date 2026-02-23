@@ -24,7 +24,7 @@ use std::thread;
 use std::time::Duration;
 use std::{env, fs};
 use std::{process, time};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 fn unshare_user_namespace() -> Result<()> {
     let host_uid = nix::unistd::getuid();
@@ -691,12 +691,29 @@ pub fn exec(
     }
 }
 
+fn clean_up_container(
+    rollbacks: Vec<&PathBuf>,
+    sleep_dur: &Duration,
+    name: &str,
+    container_path: &PathBuf,
+) -> Result<()> {
+    rollback_dirs(rollbacks)?;
+    thread::sleep(*sleep_dur);
+    rollback_container_manifest(name, container_path)?;
+
+    Ok(())
+}
+
 pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Result<()> {
     debug!("Container's state: {:?}", container.state);
     match container.state {
         State::Created | State::Stopped => {
-            rollback_dirs(vec![&PathBuf::from(&container.dir)])?;
-            rollback_container_manifest(name, &PathBuf::from(&env.bento_containers_env_path))?;
+            clean_up_container(
+                vec![&PathBuf::from(&container.dir)],
+                &Duration::from_millis(200),
+                name,
+                &PathBuf::from(&env.bento_containers_env_path),
+            )?;
         }
         State::Creating | State::Running => {
             if force {
@@ -704,8 +721,9 @@ pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Resu
                     // kill
                     Some(pid) => match apply_signal(Pid::from_raw(pid), Signal::SIGKILL) {
                         Ok(()) => {
-                            rollback_dirs(vec![&PathBuf::from(&container.dir)])?;
-                            rollback_container_manifest(
+                            clean_up_container(
+                                vec![&PathBuf::from(&container.dir)],
+                                &Duration::from_millis(200),
                                 name,
                                 &PathBuf::from(&env.bento_containers_env_path),
                             )?;
@@ -719,10 +737,14 @@ pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Resu
                         }
                     },
                     None => {
-                        return Err(anyhow!(
-                            "Failed to delete due to missing pid: {:#?}",
-                            container
-                        ));
+                        warn!("Container {} had a pid of {:?}", name, container.pid);
+
+                        clean_up_container(
+                            vec![&PathBuf::from(&container.dir)],
+                            &Duration::from_millis(200),
+                            name,
+                            &PathBuf::from(&env.bento_containers_env_path),
+                        )?;
                     }
                 }
             } else {
