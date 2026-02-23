@@ -153,7 +153,7 @@ fn main() -> Result<()> {
                     Ok(()) => info!("delete successful"),
                     Err(e) => anyhow::bail!("{:?}", e),
                 },
-                None => anyhow::bail!("Sorry, not a container."),
+                None => anyhow::bail!("Sorry, {} is not an existing Bento container.", name),
             }
         }
         None => {
