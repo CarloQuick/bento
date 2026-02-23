@@ -733,7 +733,8 @@ pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Resu
                         }
                         Err(err) => {
                             return Err(anyhow!(
-                                "Failed to delete due to missing pid: {:#?}\n\t{}",
+                                "Failed applying `SIGKILL` to container: {}\n\t{:#?}\n\t{}",
+                                name,
                                 container,
                                 err
                             ));
@@ -996,8 +997,9 @@ mod tests {
 
     #[test]
     fn test_set_dir_permissions() -> Result<()> {
-        let parent = PathBuf::from("set_perm_test_dir");
-        let inner_dir: PathBuf = PathBuf::from("set_perm_test_dir/set_dir_test");
+        let tmp = tempfile::TempDir::new()?;
+        // let parent = PathBuf::from("set_perm_test_dir");
+        let inner_dir: PathBuf = tmp.path().join("set_dir_test");
 
         // 1. Create a dummy file for the example
         fs::create_dir_all(&inner_dir)?;
@@ -1014,32 +1016,47 @@ mod tests {
         assert!(remove_dir_all(&inner_dir).is_err());
 
         // 4. set_dir_permissions is allows us to walk a directory to allow for deletions
-        set_dir_permissions(&parent).context("failed inside set_dir_permissions")?;
+        set_dir_permissions(&PathBuf::from(tmp.path()))
+            .context("failed inside set_dir_permissions")?;
 
-        remove_dir_all(&parent)?;
+        remove_dir_all(&inner_dir)?;
 
-        assert!(!PathBuf::from(&parent).exists());
+        assert!(!&inner_dir.exists());
 
         Ok(())
     }
 
     #[test]
     fn test_delete() -> Result<()> {
+        let tmp = tempfile::TempDir::new()?;
+        // Build the directory structure your code expects
+        fs::create_dir_all(tmp.path().join("images"))?;
+        fs::create_dir_all(tmp.path().join("containers"))?;
+        // Copy your committed fixture into it
+        fs::copy(
+            "test/images/busybox.tar",
+            tmp.path().join("images/busybox.tar"),
+        )?;
+        fs::copy(
+            "test/containers/container_manifest.json",
+            tmp.path().join("containers/container_manifest.json"),
+        )?;
+
+        // Now point your Env at the temp directory
+        let env = Env {
+            bento_dir: tmp.path().to_path_buf(),
+            bento_image_env_path: tmp.path().join("images"),
+            bento_containers_env_path: tmp.path().join("containers"),
+        };
         let name = String::from("test_container");
         let image = String::from("busybox");
         let cwd = &PathBuf::from("/");
         let user_cmd = vec![String::from("sh")];
         let mount = &PathBuf::new();
-        let env_dir = PathBuf::from("./test");
-        let env = Env {
-            bento_dir: PathBuf::from(&env_dir),
-            bento_image_env_path: env_dir.join("images"),
-            bento_containers_env_path: env_dir.join("containers"),
-        };
-
+        let container_dir = tmp.path().join("containers").join(&name);
         create(&name, &image, mount, cwd, &Some(user_cmd), &env)?;
         let test_container = &Container {
-            dir: String::from("./test/containers/test_container"),
+            dir: container_dir.display().to_string(),
             state: State::Created,
             pid: None,
         };
@@ -1052,7 +1069,6 @@ mod tests {
             json::check_existing_container(&name, &env.bento_containers_env_path),
             None
         );
-        remove_dir_all(PathBuf::from("./test/images/busybox"))?;
         Ok(())
     }
 }
