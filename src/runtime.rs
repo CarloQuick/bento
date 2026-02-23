@@ -710,7 +710,7 @@ pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Resu
         State::Created | State::Stopped => {
             clean_up_container(
                 vec![&PathBuf::from(&container.dir)],
-                &Duration::from_millis(200),
+                &Duration::from_millis(0),
                 name,
                 &PathBuf::from(&env.bento_containers_env_path),
             )?;
@@ -995,8 +995,8 @@ mod tests {
 
     #[test]
     fn test_set_dir_permissions() -> Result<()> {
-        let parent = PathBuf::from("test_dir");
-        let inner_dir: PathBuf = PathBuf::from("test_dir/set_dir_test");
+        let parent = PathBuf::from("set_perm_test_dir");
+        let inner_dir: PathBuf = PathBuf::from("set_perm_test_dir/set_dir_test");
 
         // 1. Create a dummy file for the example
         fs::create_dir_all(&inner_dir)?;
@@ -1046,7 +1046,7 @@ mod tests {
             json::check_existing_container(&name, &env.bento_containers_env_path),
             Some(test_container.clone())
         );
-        delete(&test_container, &name, true, &env)?;
+        delete(&test_container, &name, false, &env)?;
         assert_eq!(
             json::check_existing_container(&name, &env.bento_containers_env_path),
             None
