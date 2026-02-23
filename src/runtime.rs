@@ -693,12 +693,15 @@ pub fn exec(
 
 fn clean_up_container(
     rollbacks: Vec<&PathBuf>,
-    sleep_dur: &Duration,
+    sleep_dur: Option<&Duration>,
     name: &str,
     container_path: &PathBuf,
 ) -> Result<()> {
+    match sleep_dur {
+        Some(dur) => thread::sleep(*dur),
+        None => {}
+    }
     rollback_dirs(rollbacks)?;
-    thread::sleep(*sleep_dur);
     rollback_container_manifest(name, container_path)?;
 
     Ok(())
@@ -710,7 +713,7 @@ pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Resu
         State::Created | State::Stopped => {
             clean_up_container(
                 vec![&PathBuf::from(&container.dir)],
-                &Duration::from_millis(0),
+                None,
                 name,
                 &PathBuf::from(&env.bento_containers_env_path),
             )?;
@@ -723,7 +726,7 @@ pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Resu
                         Ok(()) => {
                             clean_up_container(
                                 vec![&PathBuf::from(&container.dir)],
-                                &Duration::from_millis(200),
+                                Some(&Duration::from_millis(200)),
                                 name,
                                 &PathBuf::from(&env.bento_containers_env_path),
                             )?;
@@ -741,7 +744,7 @@ pub fn delete(container: &Container, name: &str, force: bool, env: &Env) -> Resu
 
                         clean_up_container(
                             vec![&PathBuf::from(&container.dir)],
-                            &Duration::from_millis(200),
+                            None,
                             name,
                             &PathBuf::from(&env.bento_containers_env_path),
                         )?;
@@ -846,7 +849,7 @@ fn set_dir_permissions(path: &PathBuf) -> Result<()> {
             debug!("permissions before: {:#?}", permissions);
             permissions.set_mode(0o775);
             let p = entry.path();
-            set_permissions(&p, permissions.clone()).context("Failed setting pemissions.")?;
+            set_permissions(&p, permissions.clone()).context("Failed setting permissions.")?;
 
             debug!("permissions after: {:#?}", permissions);
 
@@ -898,8 +901,6 @@ pub fn hyphen_for_colon(image: &String) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs::remove_dir_all;
-
-    use anyhow::Ok;
 
     use super::*;
 
