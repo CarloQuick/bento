@@ -45,16 +45,21 @@ impl Env {
         Ok(envs)
     }
 
-    pub fn check_envs(&self) -> Result<()>{
-
+    pub fn check_envs(&self) -> Result<()> {
         if self.bento_dir.is_empty() || !self.bento_dir.exists() {
-            return Err(anyhow!("BENTO_DIR is either empty or path does not exist. Check your .env file!"))
+            return Err(anyhow!(
+                "BENTO_DIR is either empty or path does not exist. Check your .env file!"
+            ));
         }
         if self.bento_image_env_path.is_empty() || !self.bento_image_env_path.exists() {
-            return Err(anyhow!("BENTO_IMAGES_PATH is either empty or path does not exist. Check your .env file!"))
+            return Err(anyhow!(
+                "BENTO_IMAGES_PATH is either empty or path does not exist. Check your .env file!"
+            ));
         }
         if self.bento_containers_env_path.is_empty() || !self.bento_containers_env_path.exists() {
-            return Err(anyhow!("BENTO_CONTAINERS_PATH is either empty or path does not exist. Check your .env file!"))
+            return Err(anyhow!(
+                "BENTO_CONTAINERS_PATH is either empty or path does not exist. Check your .env file!"
+            ));
         }
 
         Ok(())
@@ -68,15 +73,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn env_vals_ok() -> Result<()>{
-        
+    fn env_vals_ok() -> Result<()> {
         let test_path = "/tmp/test_path_env_vals_ok";
         create_dir_all(test_path)?;
-        
+
         let envs: Env = Env::new(
-        PathBuf::from(test_path),
-        PathBuf::from(test_path),
-        PathBuf::from(test_path),
+            PathBuf::from(test_path),
+            PathBuf::from(test_path),
+            PathBuf::from(test_path),
         );
 
         assert!(&envs.check_envs().is_ok());
@@ -84,33 +88,31 @@ mod tests {
         Ok(())
     }
     #[test]
-    fn missing_bento_dir_err() -> Result<()>{
-        
+    fn missing_bento_dir_err() -> Result<()> {
         let test_path = "/tmp/test_path_missing_bento_dir_err";
         let missing_bento_dir = "/tmp/missing_est_path";
         create_dir_all(test_path)?;
-        
+
         let envs: Env = Env::new(
-        PathBuf::from(missing_bento_dir),
-        PathBuf::from(test_path),
-        PathBuf::from(test_path),
+            PathBuf::from(missing_bento_dir),
+            PathBuf::from(test_path),
+            PathBuf::from(test_path),
         );
 
         assert!(&envs.check_envs().is_err());
         remove_dir_all(test_path)?;
         Ok(())
     }
-        #[test]
-    fn bento_dir_is_empty_err() -> Result<()>{
-        
+    #[test]
+    fn bento_dir_is_empty_err() -> Result<()> {
         let test_path = "/tmp/test_path_bento_dir_is_empty_err";
         let missing_bento_dir = "";
         create_dir_all(test_path)?;
-        
+
         let envs: Env = Env::new(
-        PathBuf::from(missing_bento_dir),
-        PathBuf::from(test_path),
-        PathBuf::from(test_path),
+            PathBuf::from(missing_bento_dir),
+            PathBuf::from(test_path),
+            PathBuf::from(test_path),
         );
 
         assert!(&envs.check_envs().is_err());

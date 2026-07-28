@@ -1,9 +1,9 @@
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
+use tracing::debug;
 #[derive(Serialize, Deserialize, Debug)]
 pub struct OciImageConfig {
     pub architecture: String,
@@ -92,7 +92,10 @@ pub fn get_oci_index(index_json_path: &PathBuf) -> Result<OciIndex> {
 pub fn get_oci_manifest(manifest_path: &PathBuf) -> Result<OciManifest> {
     debug!("Checking existence of Oci Manifest Path");
     if !manifest_path.exists() {
-        return Err(anyhow!("Manifest path does not exist at {:?}.", manifest_path));
+        return Err(anyhow!(
+            "Manifest path does not exist at {:?}.",
+            manifest_path
+        ));
     }
     let file = File::open(&manifest_path)
         .with_context(|| format!("Failed to open OciManifest at {}.", manifest_path.display()))?;
@@ -110,7 +113,10 @@ pub fn get_nested_manifest(
     nested_index_json_path: &Option<PathBuf>,
     target_arch: &String,
 ) -> Result<Option<usize>> {
-    debug!("Getting nested manifest that matches machine's architecture: {}", target_arch);
+    debug!(
+        "Getting nested manifest that matches machine's architecture: {}",
+        target_arch
+    );
     if let Some(nested_path) = nested_index_json_path {
         match get_oci_index(&tmp_path.join(nested_path)) {
             Ok(nested) => {

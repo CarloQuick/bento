@@ -56,7 +56,7 @@ fn get_layers_from_manifest(layers: Vec<ManifestLayers>) -> Result<ImageLayers> 
         }
     }
     if image_layers.is_empty() {
-        return Err(anyhow!("No image layers to return."))
+        return Err(anyhow!("No image layers to return."));
     }
     debug!("Image layer blobs: \n{:#?}", image_layers);
     Ok(ImageLayers {
@@ -344,7 +344,6 @@ pub fn create_bento_config(
         let nested_digest = &index_json.manifests[0].digest;
         let nested_index_json_path = get_config_path(nested_digest);
         if let Some(nested_path) = &nested_index_json_path {
-
             let target_arch = return_cpu_architecture();
             debug!("Target Architecture: {}.", target_arch);
 
@@ -401,12 +400,10 @@ pub fn create_bento_config(
                     info!("Successfully created bento container json!");
                 }
             }
-        }
-        else {
+        } else {
             return Err(anyhow!("Failed to retrieve nested image path."));
         }
-    }
-    else {
+    } else {
         return Err(anyhow!("Failed to retrieve Index Json."));
     }
     info!("Added the new container!");

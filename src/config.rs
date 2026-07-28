@@ -3,10 +3,10 @@ use crate::oci::OciImageConfig;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::to_writer_pretty;
-use tracing::{debug, info};
 use std::fs::{File, create_dir};
 use std::io::{BufReader, BufWriter, Write};
 use std::path::PathBuf;
+use tracing::{debug, info};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct BentoConfigJson {
@@ -76,8 +76,12 @@ pub fn create_bento_json(
 ) -> Result<BentoConfigJson> {
     info!("Creating Bento Config");
     // Open the file in read-only mode with buffer.
-    let read_file =
-        File::open(&read_path).with_context(|| format!("Failed to open read path while creating bento_config at {:?}", read_path))?;
+    let read_file = File::open(&read_path).with_context(|| {
+        format!(
+            "Failed to open read path while creating bento_config at {:?}",
+            read_path
+        )
+    })?;
     let reader = BufReader::new(read_file);
 
     let oci_image_config: OciImageConfig = serde_json::from_reader(reader)?;
@@ -105,11 +109,11 @@ pub fn create_bento_json(
 
         let path_to_lower_string = match path_to_lower.clone().into_os_string().into_string() {
             Ok(s) => s,
-            Err(err) => return Err(anyhow!("Failed to convert OsString to String: {:?}.", err))
+            Err(err) => return Err(anyhow!("Failed to convert OsString to String: {:?}.", err)),
         };
 
         extract::decompress_tarball(&path, &path_to_lower_string)?;
-        
+
         lowerdir_vec.push(path_to_lower_string.to_owned());
     }
     let (upperdir, workdir, merge) = create_overlayfs(&container_path)?;
@@ -138,8 +142,11 @@ pub fn create_overlayfs(container_path: &PathBuf) -> Result<(PathBuf, PathBuf, P
     let upperdir = container_path.join("upper");
     let workdir = container_path.join("workdir");
     let merge = container_path.join("merge");
-    
-    debug!("Creating the overlayfs: \n\tupperdir: {:?}\n\tworkdir: {:?}\n\tmergedir: {:?}", upperdir, workdir, merge);
+
+    debug!(
+        "Creating the overlayfs: \n\tupperdir: {:?}\n\tworkdir: {:?}\n\tmergedir: {:?}",
+        upperdir, workdir, merge
+    );
 
     create_dir(&upperdir).context("Failed to create upperdir")?;
     create_dir(&workdir).context("Failed to create workdir")?;
@@ -155,17 +162,18 @@ pub fn write_bento_config(write_path: &PathBuf, bento: &BentoConfigJson) -> Resu
     to_writer_pretty(&mut writer, &bento)?;
     writer.flush().context("Failed to flush the writer")?;
     debug!("Successfully wrote bento config to {:?}!", write_path);
-    Ok(())  
+    Ok(())
 }
 
 pub fn get_bento_config(bento_path: &PathBuf) -> Result<BentoConfigJson> {
     debug!("Getting bento config at: {:#?}", bento_path);
 
-    let file = File::open(&bento_path).with_context(|| format!("Couldnt open the bento_config.json: {:?}", bento_path))?;
+    let file = File::open(&bento_path)
+        .with_context(|| format!("Couldnt open the bento_config.json: {:?}", bento_path))?;
     let reader = BufReader::new(file);
     // Read the JSON contents of the file as an instance of `Address`.
     let bento_config_json: BentoConfigJson = serde_json::from_reader(reader)?;
     debug!("Bento config contents\n{:#?}", bento_config_json);
-    
+
     Ok(bento_config_json)
 }
